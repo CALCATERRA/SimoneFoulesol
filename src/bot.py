@@ -1,44 +1,43 @@
 import os
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackQueryHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+    CallbackQueryHandler,
+)
 
-# Recupera il token del bot dalle variabili d'ambiente
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-
-def start(update: Update, context: CallbackContext) -> None:
-    # Risposta iniziale con pulsante
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("Vedi la foto", callback_data='photo')]
+        [InlineKeyboardButton("Vedi la foto", callback_data="photo")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text('Benvenuto! Clicca per vedere la foto esclusiva.', reply_markup=reply_markup)
+    await update.message.reply_text(
+        "Benvenuto! Clicca per vedere la foto esclusiva.",
+        reply_markup=reply_markup
+    )
 
-def button(update: Update, context: CallbackContext) -> None:
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
-    if query.data == 'photo':
-        # Invio la foto
-        query.edit_message_text(text="Ecco la tua foto esclusiva!")
-        context.bot.send_photo(chat_id=query.message.chat_id, photo=open('percorso/alla/foto.jpg', 'rb'))
+    if query.data == "photo":
+        await query.edit_message_text(text="Ecco la tua foto esclusiva!")
+        with open("percorso/alla/foto.jpg", "rb") as photo:
+            await context.bot.send_photo(chat_id=query.message.chat.id, photo=photo)
 
-def main():
-    # Controlla che il token sia stato trovato
-    if TOKEN is None:
-        print("Errore: il token non è stato trovato nelle variabili d'ambiente!")
+async def main():
+    token = os.environ.get("TELEGRAM_TOKEN")
+    if not token:
+        print("Errore: TELEGRAM_TOKEN non trovato nelle variabili d'ambiente")
         return
 
-    # Configura il bot
-    updater = Updater(TOKEN)
+    app = ApplicationBuilder().token(token).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button))
 
-    # Aggiungi i comandi
-    updater.dispatcher.add_handler(CommandHandler('start', start))
-    updater.dispatcher.add_handler(CallbackQueryHandler(button))
+    await app.run_polling()
 
-    # Avvia il bot
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
