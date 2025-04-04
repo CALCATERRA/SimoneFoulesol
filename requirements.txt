@@ -1,5 +1,3 @@
-flask
-transformers
+python-telegram-bot
 requests
-gunicorn
-torch
+
