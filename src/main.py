@@ -1,44 +1,47 @@
 import os
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackQueryHandler
+from pathlib import Path
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # Recupera il token del bot dalle variabili d'ambiente
 TOKEN = os.getenv('TELEGRAM_TOKEN')
+PHOTO_PATH = Path("percorso/alla/foto.jpg")  # Cambia con il percorso corretto
 
-def start(update: Update, context: CallbackContext) -> None:
-    # Risposta iniziale con pulsante
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [InlineKeyboardButton("Vedi la foto", callback_data='photo')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text('Benvenuto! Clicca per vedere la foto esclusiva.', reply_markup=reply_markup)
+    await update.message.reply_text(
+        'Benvenuto! Clicca per vedere la foto esclusiva.',
+        reply_markup=reply_markup
+    )
 
-def button(update: Update, context: CallbackContext) -> None:
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
     if query.data == 'photo':
-        # Invio la foto
-        query.edit_message_text(text="Ecco la tua foto esclusiva!")
-        context.bot.send_photo(chat_id=query.message.chat_id, photo=open('percorso/alla/foto.jpg', 'rb'))
+        if PHOTO_PATH.exists():
+            await query.edit_message_text(text="Ecco la tua foto esclusiva!")
+            with open(PHOTO_PATH, 'rb') as photo:
+                await context.bot.send_photo(chat_id=query.message.chat.id, photo=photo)
+        else:
+            await query.edit_message_text(text="Errore: foto non trovata.")
 
-def main():
-    # Controlla che il token sia stato trovato
+async def main() -> None:
     if TOKEN is None:
         print("Errore: il token non è stato trovato nelle variabili d'ambiente!")
         return
 
-    # Configura il bot
-    updater = Updater(TOKEN)
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    # Aggiungi i comandi
-    updater.dispatcher.add_handler(CommandHandler('start', start))
-    updater.dispatcher.add_handler(CallbackQueryHandler(button))
+    app.add_handler(CommandHandler('start', start))
+    app.add_handler(CallbackQueryHandler(button))
 
-    # Avvia il bot
-    updater.start_polling()
-    updater.idle()
+    print("Bot avviato.")
+    await app.run_polling()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
