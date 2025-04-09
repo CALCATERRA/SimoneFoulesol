@@ -25,7 +25,7 @@ def send_inline_button(chat_id):
     }
     payload = {
         "chat_id": chat_id,
-        "text": "Benvenuto! Clicca per vedere la foto esclusiva.",
+        "text": "Benvenuto! Clicca per vedere la foto esclusiva😘",
         "reply_markup": json.dumps(keyboard)
     }
     response = requests.post(url, data=payload)
@@ -50,7 +50,7 @@ async def main(context):
     try:
         print("Ricevuto request:", request.method, request.body)
 
-        data = request.body  # ✅ già un dict
+        data = request.body  # ✅ già un dict in Appwrite
         print("Parsed JSON:", data)
 
         message = data.get("message") or data.get("callback_query", {}).get("message")
@@ -64,7 +64,7 @@ async def main(context):
         print("Text:", text)
 
         if text == "/start":
-            send_message(chat_id, "Benvenuto! Clicca per vedere la foto esclusiva.")
+            # ❌ Evitiamo doppio messaggio
             send_inline_button(chat_id)
         elif data.get("callback_query", {}).get("data") == "photo":
             send_message(chat_id, "Ecco la tua foto esclusiva!")
