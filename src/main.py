@@ -42,7 +42,7 @@ def send_photo(chat_id):
     print("send_photo:", response.status_code, response.text)
 
 
-# ✅ Funzione compatibile con Appwrite
+# ✅ Compatibile Appwrite con fix JSON body
 async def main(context):
     request = context.req
     response = context.res
@@ -50,7 +50,7 @@ async def main(context):
     try:
         print("Ricevuto request:", request.method, request.body)
 
-        data = json.loads(request.body)
+        data = request.body  # ✅ già un dict
         print("Parsed JSON:", data)
 
         message = data.get("message") or data.get("callback_query", {}).get("message")
