@@ -1,11 +1,12 @@
 import os
-from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # Recupera il token del bot dalle variabili d'ambiente
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-PHOTO_PATH = Path("percorso/alla/foto.jpg")  # Cambia con il percorso corretto
+TOKEN = os.getenv('TELEGRAM_TOKEN') or 'INSERISCI_IL_TUO_TOKEN_QUI'
+
+# URL della foto su Appwrite
+PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/files/67f694ed0029e4957b1c/view?project=67f037f300060437d16d&mode=admin"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
@@ -22,12 +23,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await query.answer()
 
     if query.data == 'photo':
-        if PHOTO_PATH.exists():
-            await query.edit_message_text(text="Ecco la tua foto esclusiva!")
-            with open(PHOTO_PATH, 'rb') as photo:
-                await context.bot.send_photo(chat_id=query.message.chat.id, photo=photo)
-        else:
-            await query.edit_message_text(text="Errore: foto non trovata.")
+        await query.edit_message_text(text="Ecco la tua foto esclusiva!")
+        await context.bot.send_photo(chat_id=query.message.chat.id, photo=PHOTO_URL)
 
 async def main() -> None:
     if TOKEN is None:
