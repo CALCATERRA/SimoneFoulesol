@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # Recupera il token del bot dalle variabili d'ambiente
-TOKEN = os.getenv('TELEGRAM_TOKEN') or 'INSERISCI_IL_TUO_TOKEN_QUI'
+TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 # URL della foto su Appwrite
 PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/files/67f694ed0029e4957b1c/view?project=67f037f300060437d16d&mode=admin"
