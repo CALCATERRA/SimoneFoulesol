@@ -1,44 +1,71 @@
+import json
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+import requests
 
-# Recupera il token del bot dalle variabili d'ambiente
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-
-# URL della foto su Appwrite
+# Inserisci il tuo TOKEN Telegram
+TELEGRAM_TOKEN = '8146014311:AAHADlhNP95XhlXEQshyIsWCnrRNpigRnAY'
 PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/files/67f694ed0029e4957b1c/view?project=67f037f300060437d16d&mode=admin"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    keyboard = [
-        [InlineKeyboardButton("Vedi la foto", callback_data='photo')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        'Benvenuto! Clicca per vedere la foto esclusiva.',
-        reply_markup=reply_markup
-    )
+def handler(request, response):
+    # Parsing del corpo della richiesta
+    data = json.loads(request.body)
+    
+    # Verifica che sia un messaggio di tipo "callback_query" o "message"
+    if "message" in data:
+        message = data["message"]
+    elif "callback_query" in data:
+        message = data["callback_query"]["message"]
+    
+    if not message:
+        return response.send({"status": "error", "message": "No message found in the request"}, 400)
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "")
 
-    if query.data == 'photo':
-        await query.edit_message_text(text="Ecco la tua foto esclusiva!")
-        await context.bot.send_photo(chat_id=query.message.chat.id, photo=PHOTO_URL)
+    # Gestisci il comando /start
+    if text == "/start":
+        # Costruisci il messaggio con il pulsante "Vedi la foto"
+        send_message(chat_id, "Benvenuto! Clicca per vedere la foto esclusiva.")
+        send_inline_button(chat_id)
+    # Gestisci la risposta al pulsante
+    elif "callback_query" in data and data["callback_query"]["data"] == "photo":
+        send_message(chat_id, "Ecco la tua foto esclusiva!")
+        send_photo(chat_id)
 
-async def main() -> None:
-    if TOKEN is None:
-        print("Errore: il token non è stato trovato nelle variabili d'ambiente!")
-        return
+    return response.send({"status": "success"}, 200)
 
-    app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler('start', start))
-    app.add_handler(CallbackQueryHandler(button))
+def send_message(chat_id, text):
+    """Invia un messaggio al canale Telegram"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    requests.post(url, data=payload)
 
-    print("Bot avviato.")
-    await app.run_polling()
 
-if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+def send_inline_button(chat_id):
+    """Invia un pulsante Inline a Telegram"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "Vedi la foto", "callback_data": "photo"}]
+        ]
+    }
+    payload = {
+        "chat_id": chat_id,
+        "text": "Benvenuto! Clicca per vedere la foto esclusiva.",
+        "reply_markup": json.dumps(keyboard)
+    }
+    requests.post(url, data=payload)
+
+
+def send_photo(chat_id):
+    """Invia la foto usando il link di Appwrite"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    payload = {
+        "chat_id": chat_id,
+        "photo": PHOTO_URL
+    }
+    requests.post(url, data=payload)
