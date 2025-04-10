@@ -18,8 +18,8 @@ def send_payment_link(chat_id):
     payload = {
         "chat_id": chat_id,
         "text": (
-            "Per visualizzare la foto esclusiva, clicca sul pulsante qui sotto per pagare 0,99€ su PayPal. "
-            "Dopo il pagamento, torna qui e premi *Ho pagato* per ricevere la foto."
+            "Ciao😘 per visualizzare la foto esclusiva, clicca sul pulsante qui sotto per un caffè su PayPal. "
+            "Dopo il pagamento, torna qui e premi *Ho pagato* per ricevere la foto😏"
         ),
         "parse_mode": "Markdown",
         "reply_markup": json.dumps(keyboard)
