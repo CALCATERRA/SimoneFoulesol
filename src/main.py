@@ -4,22 +4,28 @@ import requests
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/files/67f694ed0029e4957b1c/view?project=67f037f300060437d16d&mode=admin"
+PAYPAL_URL = "https://paypal.me/SimoneFoulesol?country.x=IT&locale.x=it_IT"
 
 
-def send_inline_button(chat_id):
+def send_payment_link(chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
-            [{"text": "Vedi la foto", "callback_data": "photo"}]
+            [{"text": "Paga 0,99€ con PayPal", "url": PAYPAL_URL}],
+            [{"text": "Ho pagato", "callback_data": "photo"}]
         ]
     }
     payload = {
         "chat_id": chat_id,
-        "text": "Benvenuto! Clicca per vedere la foto esclusiva😘",
+        "text": (
+            "Per visualizzare la foto esclusiva, clicca sul pulsante qui sotto per pagare 0,99€ su PayPal. "
+            "Dopo il pagamento, torna qui e premi *Ho pagato* per ricevere la foto."
+        ),
+        "parse_mode": "Markdown",
         "reply_markup": json.dumps(keyboard)
     }
     response = requests.post(url, data=payload)
-    print("send_inline_button:", response.status_code, response.text)
+    print("send_payment_link:", response.status_code, response.text)
 
 
 def send_photo(chat_id):
@@ -32,7 +38,7 @@ def send_photo(chat_id):
     print("send_photo:", response.status_code, response.text)
 
 
-# ✅ Compatibile Appwrite con gestione /start ottimizzata
+# ✅ Compatibile Appwrite con gestione pagamento
 async def main(context):
     request = context.req
     response = context.res
@@ -54,12 +60,11 @@ async def main(context):
             print("Chat ID:", chat_id)
             print("Text:", text)
 
-            # Log utente
             user = message.get("from", {})
             print(f"Utente: {user.get('first_name', '')} {user.get('last_name', '')} (@{user.get('username', '')})")
 
             if text == "/start":
-                send_inline_button(chat_id)
+                send_payment_link(chat_id)
 
         # Se è una callback del pulsante
         elif callback_query:
