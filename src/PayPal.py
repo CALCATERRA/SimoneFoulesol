@@ -1,66 +1,61 @@
-# paypal.py
-
-import requests
-from requests.auth import HTTPBasicAuth
 import os
+import requests
+from dotenv import load_dotenv
 
-# Leggi le credenziali dal tuo ambiente (puoi usare dotenv)
+load_dotenv()
+
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
-
-# Usa SANDBOX o LIVE a seconda dell'ambiente
-PAYPAL_BASE_URL = "https://api-m.sandbox.paypal.com"
+PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com"
 
 
 def get_paypal_token():
-    url = f"{PAYPAL_BASE_URL}/v1/oauth2/token"
-    headers = {
-        "Accept": "application/json",
-        "Accept-Language": "it_IT"
-    }
-    data = {
-        "grant_type": "client_credentials"
-    }
+    url = f"{PAYPAL_API_BASE}/v1/oauth2/token"
+    headers = {"Accept": "application/json", "Accept-Language": "en_US"}
+    data = {"grant_type": "client_credentials"}
 
-    response = requests.post(url, headers=headers, data=data,
-                             auth=HTTPBasicAuth(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-
-    if response.status_code == 200:
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            data=data,
+            auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET)
+        )
+        response.raise_for_status()
         return response.json()["access_token"]
-    else:
-        print("Errore token PayPal:", response.text)
+    except Exception as e:
+        print("Errore nel recupero del token PayPal:", str(e))
         return None
 
 
 def create_payment_link(access_token, telegram_user_id, photo_number):
-    url = f"{PAYPAL_BASE_URL}/v2/checkout/orders"
-
+    url = f"{PAYPAL_API_BASE}/v2/checkout/orders"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {access_token}"
     }
 
-    payload = {
+    data = {
         "intent": "CAPTURE",
         "purchase_units": [{
+            "reference_id": f"user_{telegram_user_id}_photo_{photo_number}",
             "amount": {
                 "currency_code": "EUR",
                 "value": "0.99"
-            },
-            "custom_id": f"{telegram_user_id}_photo{photo_number}"
+            }
         }],
         "application_context": {
-            "return_url": "https://t.me/tuobot?start=pagato",  # Modifica se hai webhook
-            "cancel_url": "https://t.me/tuobot?start=annullato"
+            "return_url": "https://t.me/IlTuoBot",  # ← Puoi cambiarlo
+            "cancel_url": "https://t.me/IlTuoBot"
         }
     }
 
-    response = requests.post(url, headers=headers, json=payload)
-
-    if response.status_code == 201:
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
         order = response.json()
-        approval_url = next(link["href"] for link in order["links"] if link["rel"] == "approve")
-        return approval_url
-    else:
-        print("Errore creazione ordine:", response.text)
+        approval_link = next(link["href"] for link in order["links"] if link["rel"] == "approve")
+        return approval_link
+    except Exception as e:
+        print("Errore nella creazione dell’ordine PayPal:", str(e))
         return None
