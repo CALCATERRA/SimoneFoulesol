@@ -4,7 +4,7 @@ import requests
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/files/67f694ed0029e4957b1c/view?project=67f037f300060437d16d&mode=admin"
-PAYPAL_URL = "https://paypal.me/SimoneFoulesol?country.x=IT&locale.x=it_IT"
+PAYPAL_URL = "https://paypal.me/SimonFoulesol?country.x=IT&locale.x=it_IT"
 
 
 def send_payment_link(chat_id):
