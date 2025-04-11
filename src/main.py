@@ -84,7 +84,7 @@ def send_payment_link(chat_id):
 # Funzione per inviare la foto su Telegram
 def send_photo(chat_id):
     if user_payments.get(chat_id, {}).get('payment_pending', False):
-        # Verifica se il pagamento è stato completato (per semplicità, mettiamo che sia sempre vero dopo il click su "Guarda foto")
+        # Verifica se il pagamento è stato completato
         user_payments[chat_id]['payment_pending'] = False  # Imposta il pagamento come completato
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         payload = {
@@ -109,15 +109,31 @@ async def payment_success(context):
     try:
         # Verifica che il pagamento sia stato completato
         if payment_id and payer_id:
-            # Imposta lo stato del pagamento come completato
-            chat_id = request.query_params.get('chat_id')
-            if chat_id:
-                user_payments[chat_id] = {'payment_pending': False}
-                
-                # Rispondi che il pagamento è andato a buon fine
-                return response.json({"status": "success", "message": "Pagamento completato!"}, 200)
+            # Verifica lo stato del pagamento tramite PayPal
+            token = get_paypal_token()
+            url = f"https://api.sandbox.paypal.com/v2/checkout/orders/{payment_id}"
+            headers = {
+                "Authorization": f"Bearer {token}"
+            }
+            payment_response = requests.get(url, headers=headers)
+
+            if payment_response.status_code == 200:
+                payment_data = payment_response.json()
+                if payment_data['status'] == 'COMPLETED':
+                    # Imposta lo stato del pagamento come completato
+                    chat_id = request.query_params.get('chat_id')
+                    if chat_id:
+                        user_payments[chat_id] = {'payment_pending': False}
+
+                        # Invia foto all'utente
+                        send_photo(chat_id)
+                        return response.json({"status": "success", "message": "Pagamento completato, la foto è stata inviata!"}, 200)
+                else:
+                    return response.json({"status": "error", "message": "Pagamento non completato."}, 400)
+            else:
+                return response.json({"status": "error", "message": "Errore nel recupero dei dettagli del pagamento."}, 400)
         else:
-            return response.json({"status": "error", "message": "Errore nel pagamento."}, 400)
+            return response.json({"status": "error", "message": "Dati del pagamento non validi."}, 400)
     
     except Exception as e:
         return response.json({"status": "error", "message": str(e)}, 500)
