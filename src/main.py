@@ -47,8 +47,8 @@ def create_payment_link(amount):
             }
         ],
         "application_context": {
-            "return_url": "https://your-site.com/return",  # Metti qui l'URL di ritorno
-            "cancel_url": "https://your-site.com/cancel"   # Metti qui l'URL di annullamento
+            "return_url": "https://your-server.com/payment_success",  # URL di ritorno
+            "cancel_url": "https://your-server.com/payment_cancel"   # URL di annullamento
         }
     }
     response = requests.post(url, headers=headers, json=data)
@@ -96,6 +96,31 @@ def send_photo(chat_id):
     else:
         # Se non c'è un pagamento in sospeso, non inviare la foto
         print("Pagamento non completato, non invio la foto.")
+
+# Funzione per gestire il ritorno del pagamento e verificare lo stato del pagamento
+async def payment_success(context):
+    request = context.req
+    response = context.res
+    
+    # Ottieni i parametri di ritorno da PayPal
+    payment_id = request.query_params.get('paymentId')
+    payer_id = request.query_params.get('PayerID')
+
+    try:
+        # Verifica che il pagamento sia stato completato
+        if payment_id and payer_id:
+            # Imposta lo stato del pagamento come completato
+            chat_id = request.query_params.get('chat_id')
+            if chat_id:
+                user_payments[chat_id] = {'payment_pending': False}
+                
+                # Rispondi che il pagamento è andato a buon fine
+                return response.json({"status": "success", "message": "Pagamento completato!"}, 200)
+        else:
+            return response.json({"status": "error", "message": "Errore nel pagamento."}, 400)
+    
+    except Exception as e:
+        return response.json({"status": "error", "message": str(e)}, 500)
 
 # Funzione principale che gestisce i messaggi e le callback
 async def main(context):
