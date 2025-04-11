@@ -2,7 +2,7 @@ import json
 import os
 import requests
 from dotenv import load_dotenv
-from PayPal import get_PayPal_token, create_payment_link
+from paypal import get_paypal_token, create_payment_link
 
 load_dotenv()
 
@@ -11,9 +11,9 @@ DEFAULT_PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f69443003036
 
 
 def send_payment_link(chat_id, telegram_user_id, photo_number):
-    token = get_PayPal_token()
+    token = get_paypal_token()
     if not token:
-        print("❌ Impossibile ottenere il token PayPal")
+        print("❌ Impossibile ottenere il token paypal")
         return
 
     payment_url = create_payment_link(token, telegram_user_id, photo_number)
@@ -31,7 +31,7 @@ def send_payment_link(chat_id, telegram_user_id, photo_number):
     payload = {
         "chat_id": chat_id,
         "text": (
-            f"Per sbloccare la foto {photo_number}, clicca sul pulsante qui sotto per pagare con PayPal.\n"
+            f"Per sbloccare la foto {photo_number}, clicca sul pulsante qui sotto per pagare con paypal.\n"
             f"Dopo il pagamento, torna qui e clicca su *Ho pagato* 😏"
         ),
         "parse_mode": "Markdown",
