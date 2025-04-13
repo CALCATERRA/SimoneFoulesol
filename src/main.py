@@ -33,7 +33,11 @@ def create_payment_link(chat_id, amount):
                 "custom_id": str(chat_id),  # per tracciare da IPN
                 "notify_url": "https://67f6d3471e1e1546c937.appwrite.global/v1/functions/67f6d345003e6da67d40/executions"
             }
-        ]
+        ],
+        "application_context": {
+            "return_url": "https://t.me/FoulesolExclusive",  # Ritorno a Telegram
+            "cancel_url": "https://t.me/FoulesolExclusive"   # Se annullato, rimane su Telegram
+        }
     }
     res = requests.post(url, headers=headers, json=data)
     if res.status_code == 201:
@@ -96,8 +100,7 @@ def handle_paypal_ipn(request_data):
         payment_status = ipn.get("payment_status")
         chat_id = ipn.get("custom")
 
-        # Aggiunta di un controllo per evitare loop di pagamento
-        if payment_status == "Completed" and chat_id and user_payments.get(chat_id, {}).get('payment_pending', True):
+        if payment_status == "Completed" and chat_id:
             user_payments[chat_id] = {'payment_pending': False}
             send_view_photo_button(chat_id)
 
