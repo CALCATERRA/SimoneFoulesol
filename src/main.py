@@ -33,11 +33,7 @@ def create_payment_link(chat_id, amount):
                 "custom_id": str(chat_id),  # per tracciare da IPN
                 "notify_url": "https://67f6d3471e1e1546c937.appwrite.global/v1/functions/67f6d345003e6da67d40/executions"
             }
-        ],
-        "application_context": {
-            "return_url": "https://example.com/success",  # non usata
-            "cancel_url": "https://example.com/cancel"    # non usata
-        }
+        ]
     }
     res = requests.post(url, headers=headers, json=data)
     if res.status_code == 201:
