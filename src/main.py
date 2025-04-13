@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+from urllib.parse import parse_qs
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -30,13 +31,13 @@ def create_payment_link(chat_id, amount):
         "purchase_units": [
             {
                 "amount": {"currency_code": "EUR", "value": str(amount)},
-                "custom_id": str(chat_id),  # per tracciare da IPN
+                "custom_id": str(chat_id),
                 "notify_url": "https://67f6d3471e1e1546c937.appwrite.global/v1/functions/67f6d345003e6da67d40/executions"
             }
         ],
         "application_context": {
-            "return_url": "https://t.me/FoulesolExclusive_bot",  # Ritorno a Telegram
-            "cancel_url": "https://t.me/FoulesolExclusive_bot"   # Se annullato, rimane su Telegram
+            "return_url": "https://t.me/FoulesolExclusive_bot",
+            "cancel_url": "https://t.me/FoulesolExclusive_bot"
         }
     }
     res = requests.post(url, headers=headers, json=data)
@@ -48,6 +49,8 @@ def create_payment_link(chat_id, amount):
 def send_payment_link(chat_id):
     payment_link = create_payment_link(chat_id, 0.99)
     user_payments[chat_id] = {'payment_pending': True}
+
+    # Invia messaggio con link PayPal
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
@@ -57,13 +60,18 @@ def send_payment_link(chat_id):
     payload = {
         "chat_id": chat_id,
         "text": (
-            "Ciao 😘 clicca sul pulsante per offrirmi un caffè su PayPal. "
+            "Ciao 😘 clicca sul pulsante per offrirmi un caffè su PayPal.\n"
             "Dopo il pagamento, torna qui e premi *Guarda foto* per riceverla 😏"
         ),
         "parse_mode": "Markdown",
         "reply_markup": json.dumps(keyboard)
     }
-    requests.post(url, data=payload)
+    r = requests.post(url, data=payload)
+    if r.status_code != 200:
+        print("Telegram error (payment link):", r.text)
+
+    # Invia subito il pulsante "Guarda foto"
+    send_view_photo_button(chat_id)
 
 def send_view_photo_button(chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -74,35 +82,48 @@ def send_view_photo_button(chat_id):
     }
     payload = {
         "chat_id": chat_id,
-        "text": "Pagamento ricevuto! Premi qui sotto per vedere la foto 👇",
+        "text": "Dopo il pagamento, premi qui sotto per vedere la foto 👇",
         "reply_markup": json.dumps(keyboard)
     }
-    requests.post(url, data=payload)
+    r = requests.post(url, data=payload)
+    if r.status_code != 200:
+        print("Telegram error (view button):", r.text)
 
 def send_photo(chat_id):
-    if user_payments.get(chat_id, {}).get('payment_pending', True) is False:
+    if not user_payments.get(chat_id):
+        user_payments[chat_id] = {'payment_pending': True}
+
+    if user_payments[chat_id]['payment_pending'] is False:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         payload = {
             "chat_id": chat_id,
             "photo": PHOTO_URL
         }
-        requests.post(url, data=payload)
+        r = requests.post(url, data=payload)
+        if r.status_code != 200:
+            print("Telegram error (send photo):", r.text)
+    else:
+        print(f"Pagamento non completato per chat_id {chat_id}")
 
-# Verifica e gestisce chiamate IPN da PayPal
+# Gestione IPN PayPal
 def handle_paypal_ipn(request_data):
     verify_url = "https://ipnpb.sandbox.paypal.com/cgi-bin/webscr"
     verify_payload = 'cmd=_notify-validate&' + request_data
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     res = requests.post(verify_url, headers=headers, data=verify_payload)
-    
+
     if res.text == "VERIFIED":
-        ipn = dict(x.split('=') for x in request_data.split('&') if '=' in x)
+        ipn = {k: v[0] for k, v in parse_qs(request_data).items()}
         payment_status = ipn.get("payment_status")
         chat_id = ipn.get("custom")
 
         if payment_status == "Completed" and chat_id:
             user_payments[chat_id] = {'payment_pending': False}
             send_view_photo_button(chat_id)
+        else:
+            print("Pagamento non completato o chat_id mancante.")
+    else:
+        print("IPN non verificato:", res.text)
 
 # Funzione principale Appwrite
 async def main(context):
@@ -133,4 +154,5 @@ async def main(context):
         return res.json({"status": "ok"}, 200)
 
     except Exception as e:
+        print("Errore:", str(e))
         return res.json({"status": "error", "message": str(e)}, 500)
