@@ -2,16 +2,16 @@ import json
 import os
 import requests
 
-# Config
+# Configurazione variabili
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/files/67f694ed0029e4957b1c/view?project=67f037f300060437d16d&mode=admin"
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
-# Stato utente (nota: in memoria, non persiste su Appwrite)
+# Per tracciare lo stato del pagamento
 user_payments = {}
 
-# Ottieni token PayPal
+# Funzione per ottenere il token di PayPal
 def get_paypal_token():
     url = "https://api.sandbox.paypal.com/v1/oauth2/token"
     headers = {
@@ -22,10 +22,12 @@ def get_paypal_token():
         "grant_type": "client_credentials"
     }
     response = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    response.raise_for_status()
-    return response.json()['access_token']
+    if response.status_code == 200:
+        return response.json()['access_token']
+    else:
+        raise Exception(f"Error getting PayPal token: {response.text}")
 
-# Crea link PayPal con redirect verso funzione Appwrite
+# Funzione per creare il link di pagamento PayPal
 def create_payment_link(chat_id, amount):
     token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
@@ -44,16 +46,18 @@ def create_payment_link(chat_id, amount):
             }
         ],
         "application_context": {
-            "return_url": f"https://cloud.appwrite.io/v1/functions/67f6d345003e6da67d40/executions?chat_id={chat_id}",
-            "cancel_url": f"https://cloud.appwrite.io/v1/functions/67f6d345003e6da67d40/executions?cancelled=true&chat_id={chat_id}"
+            "return_url": f"https://your-server.com/payment_success?chat_id={chat_id}",
+            "cancel_url": "https://your-server.com/payment_cancel"
         }
     }
     response = requests.post(url, headers=headers, json=data)
-    response.raise_for_status()
-    approval_url = next(link['href'] for link in response.json()['links'] if link['rel'] == 'approve')
-    return approval_url
+    if response.status_code == 201:
+        approval_url = next(link['href'] for link in response.json()['links'] if link['rel'] == 'approve')
+        return approval_url
+    else:
+        raise Exception(f"Error creating PayPal payment link: {response.text}")
 
-# Invia link pagamento
+# Invia link pagamento su Telegram
 def send_payment_link(chat_id):
     payment_link = create_payment_link(chat_id, 0.99)
     user_payments[chat_id] = {'payment_pending': True}
@@ -74,7 +78,7 @@ def send_payment_link(chat_id):
     }
     requests.post(url, data=payload)
 
-# Pulsante per guardare la foto
+# Invia pulsante per vedere la foto
 def send_view_photo_button(chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
@@ -89,9 +93,9 @@ def send_view_photo_button(chat_id):
     }
     requests.post(url, data=payload)
 
-# Invia la foto
+# Invia la foto su Telegram
 def send_photo(chat_id):
-    if user_payments.get(chat_id, {}).get('payment_pending') is False:
+    if user_payments.get(chat_id, {}).get('payment_pending', False) is False:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         payload = {
             "chat_id": chat_id,
@@ -99,41 +103,47 @@ def send_photo(chat_id):
         }
         requests.post(url, data=payload)
     else:
-        print(f"⚠️ Pagamento non completato per chat_id {chat_id}")
+        print("Pagamento non completato, non invio la foto.")
 
-# Entry point per Appwrite
+# Gestisce ritorno pagamento da PayPal
+async def payment_success(context):
+    request = context.req
+    response = context.res
+    payment_id = request.query_params.get('paymentId')
+    payer_id = request.query_params.get('PayerID')
+    chat_id = request.query_params.get('chat_id')
+
+    try:
+        if payment_id and payer_id:
+            token = get_paypal_token()
+            url = f"https://api.sandbox.paypal.com/v2/checkout/orders/{payment_id}"
+            headers = {"Authorization": f"Bearer {token}"}
+            payment_response = requests.get(url, headers=headers)
+
+            if payment_response.status_code == 200:
+                payment_data = payment_response.json()
+                if payment_data['status'] == 'COMPLETED' and chat_id:
+                    user_payments[chat_id] = {'payment_pending': False}
+                    send_view_photo_button(chat_id)
+                    return response.json({"status": "success", "message": "Pagamento completato, premi per vedere la foto"}, 200)
+                else:
+                    return response.json({"status": "error", "message": "Pagamento non completato"}, 400)
+            else:
+                return response.json({"status": "error", "message": "Errore nel recupero dettagli pagamento"}, 400)
+        else:
+            return response.json({"status": "error", "message": "Dati pagamento mancanti"}, 400)
+    except Exception as e:
+        return response.json({"status": "error", "message": str(e)}, 500)
+
+# Funzione principale che gestisce messaggi e callback
 async def main(context):
     request = context.req
     response = context.res
 
     try:
-        # PAYPAL REDIRECT?
-        query = request.query_params
-        if "paymentId" in query and "PayerID" in query:
-            payment_id = query["paymentId"]
-            payer_id = query["PayerID"]
-            chat_id = query.get("chat_id")
-
-            token = get_paypal_token()
-            order_url = f"https://api.sandbox.paypal.com/v2/checkout/orders/{payment_id}"
-            headers = {"Authorization": f"Bearer {token}"}
-            payment_response = requests.get(order_url, headers=headers)
-
-            if payment_response.status_code == 200:
-                payment_data = payment_response.json()
-                if payment_data.get("status") == "COMPLETED" and chat_id:
-                    user_payments[chat_id] = {'payment_pending': False}
-                    send_view_photo_button(chat_id)
-                    return response.json({"status": "success", "message": "Pagamento ricevuto"}, 200)
-                else:
-                    return response.json({"status": "incomplete", "message": "Pagamento non completato"}, 400)
-            else:
-                return response.json({"status": "error", "message": "Errore nella verifica pagamento"}, 400)
-
-        # TELEGRAM MESSAGGIO NORMALE
-        body = request.body
-        message = body.get("message")
-        callback_query = body.get("callback_query")
+        data = request.body
+        message = data.get("message")
+        callback_query = data.get("callback_query")
 
         if message:
             chat_id = str(message["chat"]["id"])
@@ -143,10 +153,12 @@ async def main(context):
 
         elif callback_query:
             chat_id = str(callback_query["message"]["chat"]["id"])
-            if callback_query.get("data") == "photo":
+            data_value = callback_query.get("data")
+            if data_value == "photo":
                 send_photo(chat_id)
 
-        return response.json({"status": "ok"}, 200)
+        return response.json({"status": "success"}, 200)
 
     except Exception as e:
         return response.json({"status": "error", "message": str(e)}, 500)
+    
