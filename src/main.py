@@ -46,8 +46,8 @@ def create_payment_link(chat_id, amount):
             }
         ],
         "application_context": {
-            "return_url": f"https://your-server.com/payment_success?chat_id={chat_id}",
-            "cancel_url": "https://your-server.com/payment_cancel"
+            "return_url": "https://cloud.appwrite.io/v1/functions/67f6d345003e6da67d40/executions",
+            "cancel_url": "https://cloud.appwrite.io/v1/functions/67f6d345003e6da67d40/executions"
         }
     }
     response = requests.post(url, headers=headers, json=data)
