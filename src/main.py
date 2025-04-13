@@ -35,8 +35,8 @@ def create_payment_link(chat_id, amount):
             }
         ],
         "application_context": {
-            "return_url": "https://t.me/FoulesolExclusive",  # Ritorno a Telegram
-            "cancel_url": "https://t.me/FoulesolExclusive"   # Se annullato, rimane su Telegram
+            "return_url": "https://t.me/FoulesolExclusive_bot",  # Ritorno a Telegram
+            "cancel_url": "https://t.me/FoulesolExclusive_bot"   # Se annullato, rimane su Telegram
         }
     }
     res = requests.post(url, headers=headers, json=data)
