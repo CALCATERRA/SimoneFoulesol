@@ -96,7 +96,8 @@ def handle_paypal_ipn(request_data):
         payment_status = ipn.get("payment_status")
         chat_id = ipn.get("custom")
 
-        if payment_status == "Completed" and chat_id:
+        # Aggiunta di un controllo per evitare loop di pagamento
+        if payment_status == "Completed" and chat_id and user_payments.get(chat_id, {}).get('payment_pending', True):
             user_payments[chat_id] = {'payment_pending': False}
             send_view_photo_button(chat_id)
 
