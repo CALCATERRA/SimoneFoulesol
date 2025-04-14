@@ -37,7 +37,7 @@ def create_payment_link(chat_id, amount):
             }
         ],
         "application_context": {
-            "return_url": f"https://calcaterra.github.io/paypal-return/paypal-return.html?chat_id={chat_id}",
+            "return_url": "https://calcaterra.github.io/paypal-return",
             "cancel_url": "https://t.me/FoulesolExclusive_bot"
         }
     }
@@ -97,30 +97,42 @@ def send_photo(chat_id):
     else:
         print(f"⚠️ Tentativo di accesso alla foto non autorizzato da {chat_id}")
 
-# Gestione PayPal IPN
+# Gestione PayPal IPN con log dettagliati
 def handle_paypal_ipn(request_data):
-    print("🧾 IPN ricevuto:", request_data)
+    print("🧾 IPN ricevuto (raw):", request_data)
 
     verify_url = "https://ipnpb.sandbox.paypal.com/cgi-bin/webscr"
     verify_payload = 'cmd=_notify-validate&' + request_data
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    res = requests.post(verify_url, headers=headers, data=verify_payload)
 
-    print("🔁 Risposta PayPal IPN:", res.text)
+    try:
+        res = requests.post(verify_url, headers=headers, data=verify_payload)
+        print("🔁 Risposta PayPal IPN:", res.status_code, res.text)
+    except Exception as e:
+        print("❌ Errore nella verifica IPN:", str(e))
+        return
 
-    if res.text == "VERIFIED":
-        ipn = dict(x.split('=') for x in request_data.split('&') if '=' in x)
-        print("📦 Dati IPN parsati:", ipn)
+    if res.text.strip() == "VERIFIED":
+        try:
+            ipn = dict(x.split('=') for x in request_data.split('&') if '=' in x)
+            print("📦 Dati IPN parsati:", ipn)
+        except Exception as parse_error:
+            print("❌ Errore parsing IPN:", str(parse_error))
+            return
 
         payment_status = ipn.get("payment_status")
         chat_id = ipn.get("custom")
+
+        print(f"🔎 Stato pagamento: {payment_status}, chat_id: {chat_id}")
 
         if payment_status == "Completed" and chat_id:
             print(f"💰 Pagamento confermato da PayPal per chat_id: {chat_id}")
             user_payments[chat_id] = {'payment_pending': False}
             send_view_photo_button(chat_id)
         else:
-            print(f"❌ IPN ricevuto ma pagamento non completato o chat_id mancante.")
+            print(f"❌ Pagamento non completato o chat_id mancante. Stato: {payment_status}, custom: {chat_id}")
+    else:
+        print("⚠️ IPN NON verificato da PayPal")
 
 # Funzione principale Appwrite
 async def main(context):
