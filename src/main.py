@@ -130,7 +130,7 @@ async def main(context):
     try:
         content_type = req.headers.get("content-type", "")
         if content_type == "application/x-www-form-urlencoded":
-            raw_body = req.body_raw.decode()
+            raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
             handle_paypal_ipn(raw_body)
             return res.json({"status": "IPN received"}, 200)
 
