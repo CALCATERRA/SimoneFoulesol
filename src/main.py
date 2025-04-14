@@ -8,46 +8,40 @@ PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/f
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
-# Stato utenti
+# Stato utenti (temporaneo, valido solo per runtime della funzione)
 user_payments = {}
 
-# Ottieni access token PayPal
+# 🔐 Ottiene un access token da PayPal
 def get_paypal_token():
     url = "https://api.sandbox.paypal.com/v1/oauth2/token"
     headers = {"Accept": "application/json", "Accept-Language": "en_US"}
     data = {"grant_type": "client_credentials"}
     res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    if res.status_code == 200:
-        return res.json()['access_token']
-    else:
-        raise Exception(f"PayPal token error: {res.text}")
+    res.raise_for_status()
+    return res.json()['access_token']
 
-# Crea ordine PayPal con IPN
+# 💳 Crea un ordine PayPal
 def create_payment_link(chat_id, amount):
     token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
     data = {
         "intent": "CAPTURE",
-        "purchase_units": [
-            {
-                "amount": {"currency_code": "EUR", "value": str(amount)},
-                "custom_id": str(chat_id),
-                "notify_url": "https://67fd01767b6cc3ff6cc6.appwrite.global/v1/functions/67fd0175002fa4a735c4/executions"
-            }
-        ],
+        "purchase_units": [{
+            "amount": {"currency_code": "EUR", "value": str(amount)},
+            "custom_id": str(chat_id),
+            "notify_url": "https://67fd01767b6cc3ff6cc6.appwrite.global/v1/functions/67fd0175002fa4a735c4/executions"
+        }],
         "application_context": {
-            "return_url": f"https://calcaterra.github.io/paypal-return/paypal-return.html?chat_id={chat_id}",
+            "return_url": f"https://calcaterra.github.io/paypal-return/?chat_id={chat_id}",
             "cancel_url": "https://t.me/FoulesolExclusive_bot"
         }
     }
     res = requests.post(url, headers=headers, json=data)
-    if res.status_code == 201:
-        return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
-    else:
-        raise Exception(f"PayPal create payment error: {res.text}")
+    res.raise_for_status()
+    return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
-# Manda link PayPal su Telegram
+# 📩 Manda link PayPal su Telegram
 def send_payment_link(chat_id):
     payment_link = create_payment_link(chat_id, 0.99)
     user_payments[chat_id] = {'payment_pending': True}
@@ -68,9 +62,8 @@ def send_payment_link(chat_id):
     }
     requests.post(url, data=payload)
 
-# Mostra pulsante "Guarda foto"
+# 👁 Mostra pulsante "Guarda foto"
 def send_view_photo_button(chat_id):
-    print(f"📸 Invio pulsante 'Guarda foto' a {chat_id}")
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
@@ -84,67 +77,56 @@ def send_view_photo_button(chat_id):
     }
     requests.post(url, data=payload)
 
-# Invia foto all'utente
+# 📷 Invia foto solo se il pagamento è stato confermato
 def send_photo(chat_id):
     if user_payments.get(chat_id, {}).get('payment_pending') is False:
-        print(f"✅ Invio foto a {chat_id}")
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-        payload = {
-            "chat_id": chat_id,
-            "photo": PHOTO_URL
-        }
+        payload = {"chat_id": chat_id, "photo": PHOTO_URL}
         requests.post(url, data=payload)
     else:
-        print(f"⚠️ Tentativo di accesso alla foto non autorizzato da {chat_id}")
+        print(f"⚠️ Accesso non autorizzato alla foto per chat_id: {chat_id}")
 
-# Gestione PayPal IPN
+# 🔁 Gestione IPN da PayPal
 def handle_paypal_ipn(request_data):
-    print("🧾 IPN ricevuto:", request_data)
-
     verify_url = "https://ipnpb.sandbox.paypal.com/cgi-bin/webscr"
     verify_payload = 'cmd=_notify-validate&' + request_data
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     res = requests.post(verify_url, headers=headers, data=verify_payload)
 
-    print("🔁 Risposta PayPal IPN:", res.text)
-
     if res.text == "VERIFIED":
         ipn = dict(x.split('=') for x in request_data.split('&') if '=' in x)
-        print("📦 Dati IPN parsati:", ipn)
-
         payment_status = ipn.get("payment_status")
         chat_id = ipn.get("custom")
 
         if payment_status == "Completed" and chat_id:
-            print(f"💰 Pagamento confermato da PayPal per chat_id: {chat_id}")
             user_payments[chat_id] = {'payment_pending': False}
             send_view_photo_button(chat_id)
-        else:
-            print(f"❌ IPN ricevuto ma pagamento non completato o chat_id mancante.")
 
-# Funzione principale Appwrite
+# 🧠 Funzione principale Appwrite
 async def main(context):
     req = context.req
     res = context.res
 
     try:
         content_type = req.headers.get("content-type", "")
+        raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
 
+        # ✉️ IPN PayPal (form-urlencoded)
         if content_type == "application/x-www-form-urlencoded":
-            raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
             handle_paypal_ipn(raw_body)
-            return res.json({"status": "IPN received"}, 200)
+            return res.json({"status": "IPN processed"}, 200)
 
+        # 🖥️ Corpo JSON
         data = req.body
 
-        # 🌐 Notifica manuale da GitHub Pages
+        # 🔔 Notifica manuale da Netlify/Pages
         if data.get("source") == "manual-return" and data.get("chat_id"):
             chat_id = str(data["chat_id"])
-            print(f"🌍 Ricevuto ritorno manuale da GitHub Pages per chat_id: {chat_id}")
             user_payments[chat_id] = {'payment_pending': False}
             send_view_photo_button(chat_id)
-            return res.json({"status": "manual ok"}, 200)
+            return res.json({"status": "manual-return ok"}, 200)
 
+        # 📬 Messaggi Telegram
         message = data.get("message")
         callback = data.get("callback_query")
 
