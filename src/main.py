@@ -5,51 +5,19 @@ import requests
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/files/67f694ed0029e4957b1c/view?project=67f037f300060437d16d&mode=admin"
-PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
-PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
 # Stato utenti
 user_payments = {}
 
-# Ottieni access token PayPal
-def get_paypal_token():
-    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
-    headers = {"Accept": "application/json", "Accept-Language": "en_US"}
-    data = {"grant_type": "client_credentials"}
-    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    if res.status_code == 200:
-        return res.json()['access_token']
-    else:
-        raise Exception(f"PayPal token error: {res.text}")
-
-# Crea ordine PayPal con IPN
-def create_payment_link(chat_id, amount):
-    token = get_paypal_token()
-    url = "https://api.sandbox.paypal.com/v2/checkout/orders"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
-    data = {
-        "intent": "CAPTURE",
-        "purchase_units": [
-            {
-                "amount": {"currency_code": "EUR", "value": str(amount)},
-                "custom_id": str(chat_id),
-                "notify_url": "https://67fd01767b6cc3ff6cc6.appwrite.global/"
-            }
-        ],
-        "application_context": {
-            "return_url": "https://calcaterra.github.io/paypal-return/paypal-return.html",
-            "cancel_url": "https://t.me/FoulesolExclusive_bot"
-        }
-    }
-    res = requests.post(url, headers=headers, json=data)
-    if res.status_code == 201:
-        return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
-    else:
-        raise Exception(f"PayPal create payment error: {res.text}")
-
 # Manda link PayPal su Telegram
 def send_payment_link(chat_id):
-    payment_link = create_payment_link(chat_id, 0.99)
+    payment_link = (
+        f"https://www.sandbox.paypal.com/checkoutnow?amount=0.99"
+        f"&currency=EUR"
+        f"&custom={chat_id}"
+        f"&return=https://calcaterra.github.io/paypal-return/paypal-return.html?chat_id={chat_id}"
+        f"&cancel_return=https://t.me/FoulesolExclusive_bot"
+    )
     user_payments[chat_id] = {'payment_pending': True}
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
@@ -97,58 +65,23 @@ def send_photo(chat_id):
     else:
         print(f"⚠️ Tentativo di accesso alla foto non autorizzato da {chat_id}")
 
-# Gestione PayPal IPN con log dettagliati
-def handle_paypal_ipn(request_data):
-    print("🧾 IPN ricevuto (raw):", request_data)
-
-    verify_url = "https://ipnpb.sandbox.paypal.com/cgi-bin/webscr"
-    verify_payload = 'cmd=_notify-validate&' + request_data
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-
-    try:
-        res = requests.post(verify_url, headers=headers, data=verify_payload)
-        print("🔁 Risposta PayPal IPN:", res.status_code, res.text)
-    except Exception as e:
-        print("❌ Errore nella verifica IPN:", str(e))
-        return
-
-    if res.text.strip() == "VERIFIED":
-        try:
-            ipn = dict(x.split('=') for x in request_data.split('&') if '=' in x)
-            print("📦 Dati IPN parsati:", ipn)
-        except Exception as parse_error:
-            print("❌ Errore parsing IPN:", str(parse_error))
-            return
-
-        payment_status = ipn.get("payment_status")
-        chat_id = ipn.get("custom")
-
-        print(f"🔎 Stato pagamento: {payment_status}, chat_id: {chat_id}")
-
-        if payment_status == "Completed" and chat_id:
-            print(f"💰 Pagamento confermato da PayPal per chat_id: {chat_id}")
-            user_payments[chat_id] = {'payment_pending': False}
-            send_view_photo_button(chat_id)
-        else:
-            print(f"❌ Pagamento non completato o chat_id mancante. Stato: {payment_status}, custom: {chat_id}")
-    else:
-        print("⚠️ IPN NON verificato da PayPal")
-
 # Funzione principale Appwrite
 async def main(context):
     req = context.req
     res = context.res
 
     try:
-        content_type = req.headers.get("content-type", "")
-        if content_type == "application/x-www-form-urlencoded":
-            raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
-            handle_paypal_ipn(raw_body)
-            return res.json({"status": "IPN received"}, 200)
-
         data = req.body
         message = data.get("message")
         callback = data.get("callback_query")
+
+        # 🔁 Ritorno da GitHub dopo pagamento
+        if data.get("source") == "paypal-return":
+            chat_id = data.get("chat_id")
+            print(f"🔔 Notifica ritorno da GitHub per chat_id={chat_id}")
+            user_payments[chat_id] = {'payment_pending': False}
+            send_view_photo_button(chat_id)
+            return res.json({"status": "notified"}, 200)
 
         if message:
             chat_id = str(message["chat"]["id"])
