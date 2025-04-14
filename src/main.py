@@ -116,6 +116,14 @@ async def main(context):
             send_view_photo_button(chat_id)
             return res.json({"status": "notified"}, 200)
 
+        # ✅ Gestione click da pagina HTML post-pagamento
+        if data.get("source") == "manual-return" and "chat_id" in data:
+            chat_id = str(data["chat_id"])
+            print(f"🖱️ Click manual-return per chat_id={chat_id}")
+            user_payments[chat_id] = {'payment_pending': False}
+            send_view_photo_button(chat_id)
+            return res.json({"status": "manual return ok"}, 200)
+
         # Comando /start
         if message:
             chat_id = str(message["chat"]["id"])
