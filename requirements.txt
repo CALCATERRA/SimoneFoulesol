@@ -1,8 +1,1 @@
-python-telegram-bot
-flask
 appwrite
-openai
-requests
-python-dotenv
-google.generativeai
-langid
