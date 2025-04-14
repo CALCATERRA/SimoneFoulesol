@@ -37,7 +37,7 @@ def create_payment_link(chat_id, amount):
             }
         ],
         "application_context": {
-            "return_url": "https://calcaterra.github.io/paypal-return",
+            "return_url": "https://calcaterra.github.io/paypal-return/paypal-return.html",
             "cancel_url": "https://t.me/FoulesolExclusive_bot"
         }
     }
