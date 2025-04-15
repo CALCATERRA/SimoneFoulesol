@@ -8,10 +8,10 @@ PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/f
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
-# Stato utenti (temporaneo, valido solo per runtime della funzione)
+# Stato utenti (runtime)
 user_payments = {}
 
-# 🔐 Ottiene un access token da PayPal
+# 🔐 Access token da PayPal
 def get_paypal_token():
     url = "https://api.sandbox.paypal.com/v1/oauth2/token"
     headers = {"Accept": "application/json", "Accept-Language": "en_US"}
@@ -20,7 +20,7 @@ def get_paypal_token():
     res.raise_for_status()
     return res.json()['access_token']
 
-# 💳 Crea un ordine PayPal
+# 💳 Crea link pagamento PayPal
 def create_payment_link(chat_id, amount):
     token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
@@ -41,7 +41,7 @@ def create_payment_link(chat_id, amount):
     res.raise_for_status()
     return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
-# 📩 Manda link PayPal su Telegram
+# 📩 Invia link pagamento
 def send_payment_link(chat_id):
     payment_link = create_payment_link(chat_id, 0.99)
     user_payments[chat_id] = {'payment_pending': True}
@@ -62,7 +62,7 @@ def send_payment_link(chat_id):
     }
     requests.post(url, data=payload)
 
-# 👁 Mostra pulsante "Guarda foto"
+# 👁 Invia pulsante per vedere la foto
 def send_view_photo_button(chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
@@ -77,7 +77,7 @@ def send_view_photo_button(chat_id):
     }
     requests.post(url, data=payload)
 
-# 📷 Invia foto solo se il pagamento è stato confermato
+# 📷 Invia foto se autorizzato
 def send_photo(chat_id):
     if user_payments.get(chat_id, {}).get('payment_pending') is False:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
@@ -86,7 +86,7 @@ def send_photo(chat_id):
     else:
         print(f"⚠️ Accesso non autorizzato alla foto per chat_id: {chat_id}")
 
-# 🔁 Gestione IPN da PayPal
+# 🔁 IPN PayPal
 def handle_paypal_ipn(request_data):
     verify_url = "https://ipnpb.sandbox.paypal.com/cgi-bin/webscr"
     verify_payload = 'cmd=_notify-validate&' + request_data
@@ -102,7 +102,7 @@ def handle_paypal_ipn(request_data):
             user_payments[chat_id] = {'payment_pending': False}
             send_view_photo_button(chat_id)
 
-# 🧠 Funzione principale Appwrite
+# 🧠 Funzione Appwrite principale
 async def main(context):
     req = context.req
     res = context.res
@@ -111,17 +111,22 @@ async def main(context):
         content_type = req.headers.get("content-type", "")
         raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
 
-        # ✉️ IPN PayPal (form-urlencoded)
-        if content_type == "application/x-www-form-urlencoded":
+        # ✉️ IPN PayPal
+        if "application/x-www-form-urlencoded" in content_type:
             handle_paypal_ipn(raw_body)
             return res.json({"status": "IPN processed"}, 200)
 
-        # 🖥️ Corpo JSON
-        data = req.body
+        # 🧩 JSON sicuro
+        try:
+            data = req.body if isinstance(req.body, dict) else json.loads(req.body)
+        except Exception as e:
+            print("❗ JSON parsing error:", str(e))
+            return res.json({"status": "invalid json"}, 400)
 
-        # 🔔 Notifica manuale da Netlify/Pages
+        # 🔔 Chiamata manuale da Netlify
         if data.get("source") == "manual-return" and data.get("chat_id"):
             chat_id = str(data["chat_id"])
+            print(f"✅ Notifica manuale ricevuta per chat_id={chat_id}")
             user_payments[chat_id] = {'payment_pending': False}
             send_view_photo_button(chat_id)
             return res.json({"status": "manual-return ok"}, 200)
