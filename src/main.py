@@ -33,7 +33,7 @@ def create_payment_link(chat_id, amount):
             "notify_url": "https://67fd01767b6cc3ff6cc6.appwrite.global/v1/functions/67fd0175002fa4a735c4/executions"
         }],
         "application_context": {
-            "return_url": f"https://calcaterra.github.io/paypal-return/?chat_id={chat_id}",
+            "return_url": f"https://comfy-mermaid-9cebbf.netlify.app/?chat_id={chat_id}",
             "cancel_url": "https://t.me/FoulesolExclusive_bot"
         }
     }
