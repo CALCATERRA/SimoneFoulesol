@@ -4,7 +4,7 @@ import requests
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-PHOTO_URL = "https://cloud.appwrite.io/v1/storage/buckets/67f694430030364ac183/files/67f694ed0029e4957b1c/view?project=67f037f300060437d16d&mode=admin"
+PHOTO_URL = "https://drive.google.com/file/d/16fpp10W_buNpqoXQMvc0tVulZ5subPhL/view?usp=drive_link"
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
