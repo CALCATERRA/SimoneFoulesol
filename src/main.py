@@ -4,7 +4,7 @@ import requests
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-PHOTO_URL = "https://imgur.com/tIcTyUK"
+PHOTO_URL = "https://i.imgur.com/tIcTyUK.jpg"
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
