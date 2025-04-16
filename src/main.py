@@ -1,11 +1,16 @@
 import json
 import os
 import requests
+from appwrite.client import Client
+from appwrite.services.databases import Databases
+from appwrite.models import Query
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
+DATABASE_ID = os.environ.get("DATABASE_ID")
+COLLECTION_ID = os.environ.get("COLLECTION_ID")
 
 # Lista dei 100 ID di Google Drive
 PHOTO_IDS = [
@@ -13,8 +18,11 @@ PHOTO_IDS = [
     "135lkGQNvf_T4CwtRH-Pu2sG7n30iV1Cu"  # ...continua fino a 100...
 ]
 
-# Stato utenti
-user_payments = {}
+# Inizializzazione del client Appwrite
+client = Client()
+client.set_endpoint(os.environ.get("APPWRITE_ENDPOINT")).set_project(os.environ.get("APPWRITE_PROJECT_ID")).set_key(os.environ.get("APPWRITE_API_KEY"))
+
+databases = Databases(client)
 
 def get_paypal_token():
     url = "https://api.sandbox.paypal.com/v1/oauth2/token"
@@ -45,10 +53,16 @@ def create_payment_link(chat_id, amount):
 
 def send_payment_link(chat_id):
     payment_link = create_payment_link(chat_id, 0.99)
-    user_payments[chat_id] = {
-        'payment_pending': True,
-        'photo_index': user_payments.get(chat_id, {}).get('photo_index', 0)
-    }
+    
+    # Verifica stato utente nel DB
+    user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+    
+    if not user_data:
+        databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"payment_pending": True, "photo_index": 0})
+    else:
+        user_data["payment_pending"] = True
+        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
@@ -77,8 +91,9 @@ def send_view_photo_button(chat_id):
     requests.post(url, data=payload)
 
 def send_photo(chat_id):
-    user_state = user_payments.get(chat_id, {})
-    index = user_state.get('photo_index', 0)
+    # Recupera stato utente dal DB
+    user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+    index = user_data.get('photo_index', 0)
 
     if index < len(PHOTO_IDS):
         photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[index]}"
@@ -87,8 +102,9 @@ def send_photo(chat_id):
         requests.post(url, data=payload)
 
         # Incrementa per la prossima volta
-        user_payments[chat_id]['photo_index'] = index + 1
-        user_payments[chat_id]['payment_pending'] = None
+        user_data['photo_index'] = index + 1
+        user_data['payment_pending'] = None
+        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
         # Invia nuovo pulsante PayPal per la prossima foto (se ci sono ancora foto)
         if index + 1 < len(PHOTO_IDS):
@@ -121,11 +137,9 @@ async def main(context):
         # Richiamo da index.html (dopo pagamento PayPal)
         if data.get("source") == "manual-return" and data.get("chat_id"):
             chat_id = str(data["chat_id"])
-            current_index = user_payments.get(chat_id, {}).get('photo_index', 0)
-            user_payments[chat_id] = {
-                'payment_pending': False,
-                'photo_index': current_index
-            }
+            user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+            user_data['payment_pending'] = False
+            databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
             send_view_photo_button(chat_id)
             return res.json({"status": "manual-return ok"}, 200)
 
