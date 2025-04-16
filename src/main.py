@@ -8,7 +8,7 @@ PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
 # Lista dei 100 ID di Google Drive
-photo_ids = [
+PHOTO_IDS = [
     "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG", "11uKOYNTCu1bDoetyKfPtRLMTqsYPKKEc", "13--pJBJ1uyyO36ChfraQ2aVQfKecWtfr",
     "135lkGQNvf_T4CwtRH-Pu2sG7n30iV1Cu", "13C9nmhhttFf4nGKv2Z7iGl_WQsX1tr5p", "13D-2yT79oc0J3caET2hMgYr6drcufRVf",
     "144z0h5yA1IT0oarnl3uEXrRPHEC5y26z", "14slr2Igrc2GsmhT-9RAffg-Pg4ttLOXN", "14vcSGnxzUtd9kEi-pCqY5h3Is6y25LdK",
