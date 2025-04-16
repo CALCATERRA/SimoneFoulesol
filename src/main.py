@@ -62,6 +62,7 @@ def send_payment_link(chat_id):
         user_data = None
     
     if not user_data:
+        # Se l'utente non esiste, creiamo un nuovo documento
         databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"payment_pending": True, "photo_index": 0})
     else:
         user_data["payment_pending"] = True
@@ -100,6 +101,10 @@ def send_photo(chat_id):
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
     except Exception as e:
         print("❗ Errore durante il recupero dei dati dell'utente:", str(e))
+        return
+
+    if not user_data:
+        print(f"❗ Nessun dato trovato per chat_id={chat_id}")
         return
 
     index = user_data.get('photo_index', 0)
