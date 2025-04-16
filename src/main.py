@@ -3,7 +3,7 @@ import os
 import requests
 from appwrite.client import Client
 from appwrite.services.databases import Databases
-from appwrite.models import Query
+from appwrite.query import Query
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
