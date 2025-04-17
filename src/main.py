@@ -12,16 +12,6 @@ PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 DATABASE_ID = os.environ.get("DATABASE_ID")
 COLLECTION_ID = os.environ.get("COLLECTION_ID")
 
-# Debug: stampa variabili per capire cosa manca
-context.log("🔧 TELEGRAM_TOKEN:", "✅" if TELEGRAM_TOKEN else "❌ MANCANTE")
-context.log("🔧 PAYPAL_CLIENT_ID:", "✅" if PAYPAL_CLIENT_ID else "❌ MANCANTE")
-context.log("🔧 PAYPAL_SECRET:", "✅" if PAYPAL_SECRET else "❌ MANCANTE")
-context.log("🔧 DATABASE_ID:", "✅" if DATABASE_ID else "❌ MANCANTE")
-context.log("🔧 COLLECTION_ID:", "✅" if COLLECTION_ID else "❌ MANCANTE")
-context.log("🔧 APPWRITE_ENDPOINT:", os.environ.get("APPWRITE_ENDPOINT") or "❌ MANCANTE")
-context.log("🔧 APPWRITE_PROJECT_ID:", os.environ.get("APPWRITE_PROJECT_ID") or "❌ MANCANTE")
-context.log("🔧 APPWRITE_API_KEY:", "✅" if os.environ.get("APPWRITE_API_KEY") else "❌ MANCANTE")
-
 # Lista dei 100 ID di Google Drive
 PHOTO_IDS = [
     "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG", "11uKOYNTCu1bDoetyKfPtRLMTqsYPKKEc", "13--pJBJ1uyyO36ChfraQ2aVQfKecWtfr",
@@ -145,6 +135,16 @@ def send_photo(chat_id):
 async def main(context):
     req = context.req
     res = context.res
+
+    # Debug: stampa variabili per capire cosa manca
+    context.log("🔧 TELEGRAM_TOKEN: " + ("✅" if TELEGRAM_TOKEN else "❌ MANCANTE"))
+    context.log("🔧 PAYPAL_CLIENT_ID: " + ("✅" if PAYPAL_CLIENT_ID else "❌ MANCANTE"))
+    context.log("🔧 PAYPAL_SECRET: " + ("✅" if PAYPAL_SECRET else "❌ MANCANTE"))
+    context.log("🔧 DATABASE_ID: " + ("✅" if DATABASE_ID else "❌ MANCANTE"))
+    context.log("🔧 COLLECTION_ID: " + ("✅" if COLLECTION_ID else "❌ MANCANTE"))
+    context.log("🔧 APPWRITE_ENDPOINT: " + (os.environ.get("APPWRITE_ENDPOINT") or "❌ MANCANTE"))
+    context.log("🔧 APPWRITE_PROJECT_ID: " + (os.environ.get("APPWRITE_PROJECT_ID") or "❌ MANCANTE"))
+    context.log("🔧 APPWRITE_API_KEY: " + ("✅" if os.environ.get("APPWRITE_API_KEY") else "❌ MANCANTE"))
 
     try:
         content_type = req.headers.get("content-type", "")
