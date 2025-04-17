@@ -14,6 +14,13 @@ APPWRITE_ENDPOINT = os.environ.get("APPWRITE_ENDPOINT")
 APPWRITE_PROJECT_ID = os.environ.get("APPWRITE_PROJECT_ID")
 APPWRITE_API_KEY = os.environ.get("APPWRITE_API_KEY")
 
+PHOTO_IDS = [
+    "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG",
+    "11uKOYNTCu1bDoetyKfPtRLMTqsYPKKEc",
+    "13--pJBJ1uyyO36ChfraQ2aVQfKecWtfr",
+    "135lkGQNvf_T4CwtRH-Pu2sG7n30iV1Cu"
+]
+
 def log_env(context):
     context.log("🔧 TELEGRAM_TOKEN:", "✅" if TELEGRAM_TOKEN else "❌ MANCANTE")
     context.log("🔧 PAYPAL_CLIENT_ID:", "✅" if PAYPAL_CLIENT_ID else "❌ MANCANTE")
@@ -23,13 +30,6 @@ def log_env(context):
     context.log("🔧 APPWRITE_ENDPOINT:", APPWRITE_ENDPOINT or "❌ MANCANTE")
     context.log("🔧 APPWRITE_PROJECT_ID:", APPWRITE_PROJECT_ID or "❌ MANCANTE")
     context.log("🔧 APPWRITE_API_KEY:", "✅" if APPWRITE_API_KEY else "❌ MANCANTE")
-
-PHOTO_IDS = [
-    "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG",
-    "11uKOYNTCu1bDoetyKfPtRLMTqsYPKKEc",
-    "13--pJBJ1uyyO36ChfraQ2aVQfKecWtfr",
-    "135lkGQNvf_T4CwtRH-Pu2sG7n30iV1Cu"
-]
 
 def init_appwrite_client():
     client = Client()
@@ -120,9 +120,27 @@ def send_photo(chat_id, databases, context):
         context.error("❌ Nessun user_data trovato.")
         return
 
+    if user_data.get("payment_pending") is not False:
+        context.log("⛔ Pagamento non confermato o già usato.")
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={
+                "chat_id": chat_id,
+                "text": "❌ Qualcosa è andato storto. Riprova dopo il pagamento."
+            }
+        )
+        return
+
     index = user_data.get("photo_index", 0)
     if index >= len(PHOTO_IDS):
         context.log("✅ Tutte le foto già inviate.")
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={
+                "chat_id": chat_id,
+                "text": "🎉 Hai già visto tutte le foto disponibili. Grazie ancora! ❤️"
+            }
+        )
         return
 
     photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[index]}"
@@ -135,7 +153,7 @@ def send_photo(chat_id, databases, context):
     context.log(f"📤 Telegram sendPhoto status: {resp.status_code} - {resp.text}")
 
     user_data['photo_index'] = index + 1
-    user_data['payment_pending'] = None
+    user_data['payment_pending'] = True if index + 1 < len(PHOTO_IDS) else None
     databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
     if index + 1 < len(PHOTO_IDS):
@@ -154,7 +172,6 @@ async def main(context):
         log_env(context)
         databases = init_appwrite_client()
 
-        content_type = req.headers.get("content-type", "")
         raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
 
         try:
@@ -168,9 +185,13 @@ async def main(context):
             if chat_id:
                 try:
                     user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-                    user_data['payment_pending'] = False
-                    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
-                    send_view_photo_button(chat_id)
+                    if user_data.get("payment_pending") is not False:
+                        user_data['payment_pending'] = False
+                        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+                        context.log("✅ Pagamento confermato manual-return")
+                        send_view_photo_button(chat_id)
+                    else:
+                        context.log("⚠️ Pagamento già confermato")
                     return res.json({"status": "manual-return ok"}, 200)
                 except Exception as e:
                     context.error("❗ Errore durante manual-return: " + str(e))
@@ -192,7 +213,6 @@ async def main(context):
             callback_id = callback.get("id")
             callback_data = callback.get("data", "")
 
-            # Rispondere per evitare spinner
             requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
                 data={"callback_query_id": callback_id}
