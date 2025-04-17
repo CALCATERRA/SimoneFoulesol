@@ -49,10 +49,7 @@ def get_paypal_token():
 def create_payment_link(chat_id, amount):
     token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}"
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
     data = {
         "intent": "CAPTURE",
         "purchase_units": [{
@@ -79,10 +76,7 @@ def send_payment_link(chat_id, databases, context):
         user_data = None
 
     if not user_data:
-        databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {
-            "payment_pending": True,
-            "photo_index": 0
-        })
+        databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"payment_pending": True, "photo_index": 0})
     else:
         user_data["payment_pending"] = True
         databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
@@ -126,15 +120,12 @@ def send_photo(chat_id, databases, context):
         context.error("❌ Nessun user_data trovato.")
         return
 
-    if user_data.get("payment_pending") != False:
-        context.log("⛔ Pagamento non ancora confermato.")
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={
-                "chat_id": chat_id,
-                "text": "❌ Pagamento non ancora confermato. Per favore, effettua il pagamento prima di visualizzare la foto."
-            }
-        )
+    # NUOVA LOGICA: continua solo se payment_pending NON è True
+    if user_data.get("payment_pending") is True:
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+            "chat_id": chat_id,
+            "text": "❌ Qualcosa è andato storto. Riprova dopo il pagamento."
+        })
         return
 
     index = user_data.get("photo_index", 0)
@@ -158,13 +149,10 @@ def send_photo(chat_id, databases, context):
     if index + 1 < len(PHOTO_IDS):
         send_payment_link(chat_id, databases, context)
     else:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={
-                "chat_id": chat_id,
-                "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
-            }
-        )
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+            "chat_id": chat_id,
+            "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
+        })
 
 async def main(context):
     req = context.req
@@ -212,7 +200,6 @@ async def main(context):
             callback_id = callback.get("id")
             callback_data = callback.get("data", "")
 
-            # Rispondere per evitare spinner
             requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
                 data={"callback_query_id": callback_id}
