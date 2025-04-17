@@ -21,7 +21,6 @@ PHOTO_IDS = [
 # Inizializzazione del client Appwrite
 client = Client()
 client.set_endpoint(os.environ.get("APPWRITE_ENDPOINT")).set_project(os.environ.get("APPWRITE_PROJECT_ID")).set_key(os.environ.get("APPWRITE_API_KEY"))
-
 databases = Databases(client)
 
 def get_paypal_token():
@@ -52,17 +51,17 @@ def create_payment_link(chat_id, amount):
     return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
 def send_payment_link(chat_id):
+    if not chat_id:
+        return
     payment_link = create_payment_link(chat_id, 0.99)
     
-    # Verifica stato utente nel DB
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
     except Exception as e:
         print("❗ Errore durante il recupero dei dati dell'utente:", str(e))
         user_data = None
-    
+
     if not user_data:
-        # Se l'utente non esiste, creiamo un nuovo documento
         databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"payment_pending": True, "photo_index": 0})
     else:
         user_data["payment_pending"] = True
@@ -82,6 +81,8 @@ def send_payment_link(chat_id):
     requests.post(url, data=payload)
 
 def send_view_photo_button(chat_id):
+    if not chat_id:
+        return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
@@ -96,7 +97,8 @@ def send_view_photo_button(chat_id):
     requests.post(url, data=payload)
 
 def send_photo(chat_id):
-    # Recupera stato utente dal DB
+    if not chat_id:
+        return
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
     except Exception as e:
@@ -115,22 +117,18 @@ def send_photo(chat_id):
         payload = {"chat_id": chat_id, "photo": photo_url}
         requests.post(url, data=payload)
 
-        # Incrementa per la prossima volta
         user_data['photo_index'] = index + 1
         user_data['payment_pending'] = None
         databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
-        # Invia nuovo pulsante PayPal per la prossima foto (se ci sono ancora foto)
         if index + 1 < len(PHOTO_IDS):
             send_payment_link(chat_id)
         else:
-            # Fine sequenza
             final_msg = {
                 "chat_id": chat_id,
                 "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
             }
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=final_msg)
-
     else:
         print(f"✅ Tutte le foto già inviate a chat_id={chat_id}")
 
@@ -145,34 +143,50 @@ async def main(context):
         try:
             data = req.body if isinstance(req.body, dict) else json.loads(req.body)
         except Exception as e:
-            print("❗ JSON parsing error:", str(e))
+            context.error("❗ JSON parsing error: " + str(e))
             return res.json({"status": "invalid json"}, 400)
 
-        # Richiamo da index.html (dopo pagamento PayPal)
-        if data.get("source") == "manual-return" and data.get("chat_id"):
-            chat_id = str(data["chat_id"])
-            user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-            user_data['payment_pending'] = False
-            databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
-            send_view_photo_button(chat_id)
-            return res.json({"status": "manual-return ok"}, 200)
+        # Richiamo da Netlify dopo pagamento
+        if data.get("source") == "manual-return":
+            chat_id = data.get("chat_id")
+            if chat_id:
+                chat_id = str(chat_id)
+                try:
+                    user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+                    user_data['payment_pending'] = False
+                    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+                    context.log(f"✅ Manual return completato per chat_id={chat_id}")
+                    send_view_photo_button(chat_id)
+                    return res.json({"status": "manual-return ok"}, 200)
+                except Exception as e:
+                    context.error("❗ Errore durante manual-return: " + str(e))
+                    return res.json({"status": "manual-return error"}, 500)
+            else:
+                context.error("❗ chat_id mancante nel manual-return")
+                return res.json({"status": "missing chat_id"}, 400)
 
-        # Gestione comandi Telegram
+        # Gestione messaggi Telegram
         message = data.get("message")
         callback = data.get("callback_query")
 
         if message:
-            chat_id = str(message["chat"]["id"])
-            if message.get("text") == "/start":
+            chat_id = message.get("chat", {}).get("id")
+            text = message.get("text", "")
+            if chat_id and text == "/start":
+                chat_id = str(chat_id)
+                context.log(f"📨 /start ricevuto da {chat_id}")
                 send_payment_link(chat_id)
 
         elif callback:
-            chat_id = str(callback["message"]["chat"]["id"])
-            if callback.get("data") == "photo":
+            chat_id = callback.get("message", {}).get("chat", {}).get("id")
+            data_callback = callback.get("data", "")
+            if chat_id and data_callback == "photo":
+                chat_id = str(chat_id)
+                context.log(f"📸 Callback photo da {chat_id}")
                 send_photo(chat_id)
 
         return res.json({"status": "ok"}, 200)
 
     except Exception as e:
-        print("❗ Errore:", str(e))
+        context.error("❗ Errore generale: " + str(e))
         return res.json({"status": "error", "message": str(e)}, 500)
