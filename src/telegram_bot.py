@@ -22,8 +22,11 @@ db = Databases(client)
 def main(context):
     try:
         body = json.loads(context.req.body)
-        context.res.send("OK", 200)  # ✅ Risponde subito per evitare timeout
 
+        context.res.send("OK", 200)  # ✅ Risponde subito per evitare timeout
+        return  # 🔹 Importantissimo: Appwrite chiude qui la connessione
+
+        # ⚠️ Non eseguito per via del return sopra
         if "message" not in body:
             return
 
@@ -37,6 +40,7 @@ def main(context):
     except Exception as e:
         print("Errore telegram_bot.py:", e)
         context.res.send("Errore", 500)
+        return  # 🔹 Per sicurezza
 
 def handle_start(chat_id):
     try:
