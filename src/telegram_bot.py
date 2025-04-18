@@ -27,7 +27,7 @@ def main(context):
         context.res.send("OK", 200)  # ✅ Risponde subito per evitare timeout
 
         if "message" not in body:
-            return
+            return context.res.empty()
 
         message = body["message"]
         chat_id = str(message["chat"]["id"])
@@ -36,9 +36,11 @@ def main(context):
         if text == "/start":
             handle_start(chat_id)
 
+        return context.res.empty()  # 🔚 chiusura corretta
+
     except Exception as e:
         print("Errore telegram_bot.py:", e)
-        context.res.send("Errore", 500)
+        return context.res.send("Errore", 500)
 
 def handle_start(chat_id):
     try:
@@ -55,53 +57,14 @@ def handle_start(chat_id):
                 "progressivo": 0
             })
 
-        # 🔹 Ottiene access token PayPal
-        auth = (PAYPAL_CLIENT_ID, PAYPAL_SECRET)
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        data = {"grant_type": "client_credentials"}
-
-        token_response = requests.post(
-            "https://api-m.paypal.com/v1/oauth2/token",
-            auth=auth,
-            headers=headers,
-            data=data
-        )
-        access_token = token_response.json()["access_token"]
-
-        # 🔹 Crea ordine PayPal
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {access_token}"
-        }
-        order_data = {
-            "intent": "CAPTURE",
-            "purchase_units": [{
-                "amount": {
-                    "currency_code": "EUR",
-                    "value": "0.99"
-                }
-            }],
-            "application_context": {
-                "return_url": f"https://comfy-mermaid-9cebbf.netlify.app/?chat_id={chat_id}",
-                "cancel_url": "https://t.me/FoulesolExclusive_bot"
-            }
-        }
-
-        order_response = requests.post(
-            "https://api-m.paypal.com/v2/checkout/orders",
-            headers=headers,
-            json=order_data
-        )
-        order_json = order_response.json()
-        approval_url = next(link["href"] for link in order_json["links"] if link["rel"] == "approve")
-
-        # 🔹 Invia pulsante PayPal con URL reale
+        # Invia pulsante PayPal
+        paypal_link = f"https://www.paypal.com/pay?chat_id={chat_id}&client_id={PAYPAL_CLIENT_ID}"
         message = "Clicca qui per iniziare il percorso esclusivo:"
         button_text = "☕ Paga 0,99€ per iniziare"
-        send_button(chat_id, message, button_text, approval_url)
+        send_button(chat_id, message, button_text, paypal_link)
 
     except Exception as e:
-        print("Errore DB o PayPal:", e)
+        print("Errore DB o invio messaggio:", e)
 
 # 🔹 Funzione per inviare messaggi con bottone
 def send_button(chat_id, text, button_text, url):
