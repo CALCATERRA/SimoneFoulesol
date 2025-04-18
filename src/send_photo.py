@@ -33,15 +33,18 @@ def main(context):
         chat_id = str(body.get("chat_id", ""))
         if not chat_id:
             context.res.send(json.dumps({"error": "chat_id mancante"}), 400)
-            return
+            return  # 🔹 Return obbligatorio dopo send
 
         context.res.send(json.dumps({"status": "ricevuto"}), 200)  # Risposta immediata
+        return  # 🔹 Return obbligatorio dopo send
 
+        # ⚠️ Questo non verrà mai eseguito a causa del return sopra
         process_photo_send(chat_id)
 
     except Exception as e:
         print("Errore iniziale:", e)
         context.res.send(json.dumps({"error": str(e)}), 500)
+        return  # 🔹 Return obbligatorio dopo send
 
 def process_photo_send(chat_id):
     try:
