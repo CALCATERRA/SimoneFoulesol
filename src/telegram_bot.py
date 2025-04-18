@@ -26,7 +26,7 @@ async def main(context):
         context.res.send("OK", 200)  # ✅ Risponde subito per evitare timeout
 
         if "message" not in body:
-            return
+            return context.res.empty()  # Restituisce una risposta vuota se non ci sono messaggi
 
         message = body["message"]
         chat_id = str(message["chat"]["id"])
@@ -38,6 +38,9 @@ async def main(context):
     except Exception as e:
         print("Errore telegram_bot.py:", e)
         context.res.send("Errore", 500)
+        return context.res.empty()  # In caso di errore, restituisci una risposta vuota
+
+    return context.res.empty()  # Restituisce una risposta vuota se tutto è andato a buon fine
 
 # Funzione asincrona per gestire l'inizio
 async def handle_start(chat_id):
