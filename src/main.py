@@ -66,8 +66,6 @@ def create_payment_link(chat_id, amount):
     return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
 def send_payment_link(chat_id, databases, context, first_time=False):
-    if not chat_id:
-        return
     payment_link = create_payment_link(chat_id, 0.99)
 
     try:
@@ -76,28 +74,32 @@ def send_payment_link(chat_id, databases, context, first_time=False):
         user_data = None
 
     if not user_data:
-        databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"payment_pending": True, "photo_index": 0})
+        databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"photo_index": 0})
     else:
-        user_data["payment_pending"] = True
         databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
-    text = "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!" if not first_time else "☕ Vuoi vedere altre foto esclusive? Offrimi un caffè e continua!"
+    button_text = "💳 Paga 0,99€ per iniziare" if first_time else "💳 Paga 0,99€ per la prossima foto"
+    message_text = (
+        "👋 Benvenuto! Premi il pulsante qui sotto per iniziare a ricevere foto esclusive." 
+        if first_time else 
+        "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!"
+    )
 
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
-            [{"text": "💳 Paga 0,99€ per la prossima foto", "url": payment_link}]
+            [{"text": button_text, "url": payment_link}]
         ]
     }
     payload = {
         "chat_id": chat_id,
-        "text": text,
+        "text": message_text,
         "reply_markup": json.dumps(keyboard)
     }
-    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
+    requests.post(url, data=payload)
 
-def send_view_photo_button(chat_id, first_photo=False):
+def send_view_photo_button(chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    text = "❤️ Pagamento ricevuto! Premi per vedere la tua prima foto 👇" if first_photo else "❤️ Pagamento ricevuto! Premi per vedere la prossima foto 👇"
     keyboard = {
         "inline_keyboard": [
             [{"text": "📸 Guarda foto", "callback_data": "photo"}]
@@ -105,7 +107,7 @@ def send_view_photo_button(chat_id, first_photo=False):
     }
     payload = {
         "chat_id": chat_id,
-        "text": text,
+        "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 👇",
         "reply_markup": json.dumps(keyboard)
     }
     requests.post(url, data=payload)
@@ -116,14 +118,6 @@ def send_photo(chat_id, databases, context):
         context.log(f"📦 User data trovati: {user_data}")
     except Exception as e:
         context.error(f"❌ Errore nel recupero dati user: {e}")
-        return
-
-    if not user_data:
-        context.error("❌ Nessun user_data trovato.")
-        return
-
-    if user_data.get("payment_pending") != False:
-        context.log("⚠️ Pagamento non ancora effettuato. Bloccato invio foto.")
         return
 
     index = user_data.get("photo_index", 0)
@@ -137,11 +131,6 @@ def send_photo(chat_id, databases, context):
 
     photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[index]}"
     context.log(f"➡️ Invio foto: {photo_url}")
-
-    # Blocca doppio invio settando subito a True
-    user_data['payment_pending'] = None
-    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
-
     requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
         data={"chat_id": chat_id, "photo": photo_url}
@@ -151,11 +140,11 @@ def send_photo(chat_id, databases, context):
     databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
     if index + 1 < len(PHOTO_IDS):
-        send_payment_link(chat_id, databases, context, first_time=True)
+        send_payment_link(chat_id, databases, context)
     else:
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
             "chat_id": chat_id,
-            "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
+            "text": "🎉 Hai visto tutte le foto disponibili! Grazie per il supporto. ❤️"
         })
 
 async def main(context):
@@ -166,9 +155,6 @@ async def main(context):
         log_env(context)
         databases = init_appwrite_client()
 
-        content_type = req.headers.get("content-type", "")
-        raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
-
         try:
             data = req.body if isinstance(req.body, dict) else json.loads(req.body)
         except Exception as e:
@@ -178,17 +164,9 @@ async def main(context):
         if data.get("source") == "manual-return":
             chat_id = str(data.get("chat_id"))
             if chat_id:
-                try:
-                    user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-                    user_data['payment_pending'] = False
-                    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
-                    send_view_photo_button(chat_id, first_photo=(user_data.get('photo_index', 0) == 0))
-                    return res.json({"status": "manual-return ok"}, 200)
-                except Exception as e:
-                    context.error("❗ Errore durante manual-return: " + str(e))
-                    return res.json({"status": "manual-return error"}, 500)
-            else:
-                return res.json({"status": "missing chat_id"}, 400)
+                send_view_photo_button(chat_id)
+                return res.json({"status": "manual-return ok"}, 200)
+            return res.json({"status": "missing chat_id"}, 400)
 
         message = data.get("message")
         callback = data.get("callback_query")
@@ -197,7 +175,7 @@ async def main(context):
             chat_id = str(message.get("chat", {}).get("id"))
             text = message.get("text", "")
             if chat_id and text == "/start":
-                send_payment_link(chat_id, databases, context)
+                send_payment_link(chat_id, databases, context, first_time=True)
 
         elif callback:
             chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
