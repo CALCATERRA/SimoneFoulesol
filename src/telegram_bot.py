@@ -1,5 +1,4 @@
 import os
-import json
 import requests
 from appwrite.client import Client
 from appwrite.services.databases import Databases
@@ -11,8 +10,6 @@ COLLECTION_ID = os.environ["COLLECTION_ID"]
 APPWRITE_PROJECT_ID = os.environ["APPWRITE_PROJECT_ID"]
 APPWRITE_API_KEY = os.environ["APPWRITE_API_KEY"]
 APPWRITE_ENDPOINT = os.environ["APPWRITE_ENDPOINT"]
-PAYPAL_CLIENT_ID = os.environ["PAYPAL_CLIENT_ID"]
-PAYPAL_SECRET = os.environ["PAYPAL_SECRET"]
 
 # Appwrite Client
 client = Client()
@@ -23,7 +20,8 @@ db = Databases(client)
 
 def main(context):
     try:
-        body = json.loads(context.req.body)
+        # Prendiamo direttamente il body della richiesta come dizionario
+        body = context.req.body
         context.res.send("OK", 200)  # ✅ Risponde subito per evitare timeout
 
         if "message" not in body:
@@ -58,7 +56,7 @@ def handle_start(chat_id):
             })
 
         # Invia pulsante PayPal
-        paypal_link = f"https://www.paypal.com/pay?chat_id={chat_id}&client_id={PAYPAL_CLIENT_ID}"
+        paypal_link = f"https://www.paypal.com/pay?chat_id={chat_id}"
         message = "Clicca qui per iniziare il percorso esclusivo:"
         button_text = "☕ Paga 0,99€ per iniziare"
         send_button(chat_id, message, button_text, paypal_link)
@@ -68,13 +66,16 @@ def handle_start(chat_id):
 
 # 🔹 Funzione per inviare messaggi con bottone
 def send_button(chat_id, text, button_text, url):
-    requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text,
-            "reply_markup": {
-                "inline_keyboard": [[{"text": button_text, "url": url}]]
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": {
+                    "inline_keyboard": [[{"text": button_text, "url": url}]]
+                }
             }
-        }
-    )
+        )
+    except Exception as e:
+        print(f"Errore nell'invio del messaggio: {e}")
