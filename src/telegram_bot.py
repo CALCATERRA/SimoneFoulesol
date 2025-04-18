@@ -1,12 +1,10 @@
 import os
 import json
 import requests
-from flask import Flask, request
 from appwrite.client import Client
 from appwrite.services.databases import Databases
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
-app = Flask(__name__)
 
 # ENV
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
