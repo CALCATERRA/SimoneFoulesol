@@ -1,5 +1,6 @@
 import os
-import requests
+import json
+import aiohttp
 import asyncio
 from appwrite.client import Client
 from appwrite.services.databases import Databases
@@ -65,18 +66,22 @@ async def handle_start(chat_id):
     except Exception as e:
         print("Errore DB o invio messaggio:", e)
 
-# 🔹 Funzione asincrona per inviare messaggi con bottone
+# 🔹 Funzione asincrona per inviare messaggi con bottone usando aiohttp
 async def send_button(chat_id, text, button_text, url):
     try:
-        await requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "reply_markup": {
-                    "inline_keyboard": [[{"text": button_text, "url": url}]]
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "reply_markup": {
+                        "inline_keyboard": [[{"text": button_text, "url": url}]]
+                    }
                 }
-            }
-        )
+            ) as response:
+                # Puoi aggiungere un controllo sulla risposta, se necessario
+                if response.status != 200:
+                    print(f"Errore nel sendMessage: {response.status}")
     except Exception as e:
         print(f"Errore nell'invio del messaggio: {e}")
