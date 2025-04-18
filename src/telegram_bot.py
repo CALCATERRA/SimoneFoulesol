@@ -11,6 +11,8 @@ COLLECTION_ID = os.environ["COLLECTION_ID"]
 APPWRITE_PROJECT_ID = os.environ["APPWRITE_PROJECT_ID"]
 APPWRITE_API_KEY = os.environ["APPWRITE_API_KEY"]
 APPWRITE_ENDPOINT = os.environ["APPWRITE_ENDPOINT"]
+PAYPAL_CLIENT_ID = os.environ["PAYPAL_CLIENT_ID"]
+PAYPAL_SECRET = os.environ["PAYPAL_SECRET"]
 
 # Appwrite Client
 client = Client()
@@ -22,11 +24,8 @@ db = Databases(client)
 def main(context):
     try:
         body = json.loads(context.req.body)
-
         context.res.send("OK", 200)  # ✅ Risponde subito per evitare timeout
-        return  # 🔹 Importantissimo: Appwrite chiude qui la connessione
 
-        # ⚠️ Non eseguito per via del return sopra
         if "message" not in body:
             return
 
@@ -40,7 +39,6 @@ def main(context):
     except Exception as e:
         print("Errore telegram_bot.py:", e)
         context.res.send("Errore", 500)
-        return  # 🔹 Per sicurezza
 
 def handle_start(chat_id):
     try:
@@ -57,14 +55,53 @@ def handle_start(chat_id):
                 "progressivo": 0
             })
 
-        # Invia pulsante PayPal
-        paypal_link = f"https://www.paypal.com/pay?chat_id={chat_id}"
+        # 🔹 Ottiene access token PayPal
+        auth = (PAYPAL_CLIENT_ID, PAYPAL_SECRET)
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        data = {"grant_type": "client_credentials"}
+
+        token_response = requests.post(
+            "https://api-m.paypal.com/v1/oauth2/token",
+            auth=auth,
+            headers=headers,
+            data=data
+        )
+        access_token = token_response.json()["access_token"]
+
+        # 🔹 Crea ordine PayPal
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+        order_data = {
+            "intent": "CAPTURE",
+            "purchase_units": [{
+                "amount": {
+                    "currency_code": "EUR",
+                    "value": "0.99"
+                }
+            }],
+            "application_context": {
+                "return_url": f"https://comfy-mermaid-9cebbf.netlify.app/?chat_id={chat_id}",
+                "cancel_url": "https://t.me/FoulesolExclusive_bot"
+            }
+        }
+
+        order_response = requests.post(
+            "https://api-m.paypal.com/v2/checkout/orders",
+            headers=headers,
+            json=order_data
+        )
+        order_json = order_response.json()
+        approval_url = next(link["href"] for link in order_json["links"] if link["rel"] == "approve")
+
+        # 🔹 Invia pulsante PayPal con URL reale
         message = "Clicca qui per iniziare il percorso esclusivo:"
         button_text = "☕ Paga 0,99€ per iniziare"
-        send_button(chat_id, message, button_text, paypal_link)
+        send_button(chat_id, message, button_text, approval_url)
 
     except Exception as e:
-        print("Errore DB o invio messaggio:", e)
+        print("Errore DB o PayPal:", e)
 
 # 🔹 Funzione per inviare messaggi con bottone
 def send_button(chat_id, text, button_text, url):
