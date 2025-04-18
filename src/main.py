@@ -1,6 +1,8 @@
 import json
 import os
 import requests
+import traceback
+from time import sleep
 from appwrite.client import Client
 from appwrite.services.databases import Databases
 
@@ -68,11 +70,14 @@ def create_payment_link(chat_id, amount):
 def send_payment_link(chat_id, databases, context):
     if not chat_id:
         return
+
     payment_link = create_payment_link(chat_id, 0.99)
 
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-    except:
+    except Exception as e:
+        context.error("❗ Errore get_document:")
+        context.error(traceback.format_exc())
         user_data = None
 
     if not user_data:
@@ -80,6 +85,8 @@ def send_payment_link(chat_id, databases, context):
     else:
         user_data["payment_pending"] = True
         databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+
+    sleep(0.2)
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
@@ -113,19 +120,12 @@ def send_photo(chat_id, databases, context):
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
         context.log(f"📦 User data trovati: {user_data}")
     except Exception as e:
-        context.error(f"❌ Errore nel recupero dati user: {e}")
+        context.error("❌ Errore nel recupero dati user:")
+        context.error(traceback.format_exc())
         return
 
     if not user_data:
         context.error("❌ Nessun user_data trovato.")
-        return
-
-    # NUOVA LOGICA: continua solo se payment_pending NON è True
-    if user_data.get("payment_pending") is True:
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
-            "chat_id": chat_id,
-            "text": "❌ Qualcosa è andato storto. Riprova dopo il pagamento."
-        })
         return
 
     index = user_data.get("photo_index", 0)
@@ -144,7 +144,14 @@ def send_photo(chat_id, databases, context):
 
     user_data['photo_index'] = index + 1
     user_data['payment_pending'] = None
-    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+
+    try:
+        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+    except Exception as e:
+        context.error("❌ Errore update_document dopo invio foto:")
+        context.error(traceback.format_exc())
+
+    sleep(0.2)
 
     if index + 1 < len(PHOTO_IDS):
         send_payment_link(chat_id, databases, context)
@@ -162,9 +169,6 @@ async def main(context):
         log_env(context)
         databases = init_appwrite_client()
 
-        content_type = req.headers.get("content-type", "")
-        raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
-
         try:
             data = req.body if isinstance(req.body, dict) else json.loads(req.body)
         except Exception as e:
@@ -181,7 +185,8 @@ async def main(context):
                     send_view_photo_button(chat_id)
                     return res.json({"status": "manual-return ok"}, 200)
                 except Exception as e:
-                    context.error("❗ Errore durante manual-return: " + str(e))
+                    context.error("❗ Errore durante manual-return:")
+                    context.error(traceback.format_exc())
                     return res.json({"status": "manual-return error"}, 500)
             else:
                 return res.json({"status": "missing chat_id"}, 400)
@@ -213,5 +218,6 @@ async def main(context):
         return res.json({"status": "ok"}, 200)
 
     except Exception as e:
-        context.error("❗ Errore generale: " + str(e))
+        context.error("❗ Errore generale:")
+        context.error(traceback.format_exc())
         return res.json({"status": "error", "message": str(e)}, 500)
