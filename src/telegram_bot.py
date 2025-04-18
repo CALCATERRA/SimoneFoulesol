@@ -1,7 +1,6 @@
 import os
 import json
-import aiohttp
-import asyncio
+import aiohttp  # Importa aiohttp per richieste asincrone
 from appwrite.client import Client
 from appwrite.services.databases import Databases
 
@@ -20,14 +19,14 @@ client.set_project(APPWRITE_PROJECT_ID)
 client.set_key(APPWRITE_API_KEY)
 db = Databases(client)
 
+# Funzione asincrona principale
 async def main(context):
     try:
-        # Prendiamo direttamente il body della richiesta come dizionario
-        body = context.req.body
+        body = json.loads(context.req.body)
         context.res.send("OK", 200)  # ✅ Risponde subito per evitare timeout
 
         if "message" not in body:
-            return context.res.empty()
+            return
 
         message = body["message"]
         chat_id = str(message["chat"]["id"])
@@ -36,12 +35,11 @@ async def main(context):
         if text == "/start":
             await handle_start(chat_id)
 
-        return context.res.empty()  # 🔚 chiusura corretta
-
     except Exception as e:
         print("Errore telegram_bot.py:", e)
-        return context.res.send("Errore", 500)
+        context.res.send("Errore", 500)
 
+# Funzione asincrona per gestire l'inizio
 async def handle_start(chat_id):
     try:
         # Controlla se l'utente esiste
@@ -66,22 +64,18 @@ async def handle_start(chat_id):
     except Exception as e:
         print("Errore DB o invio messaggio:", e)
 
-# 🔹 Funzione asincrona per inviare messaggi con bottone usando aiohttp
+# Funzione asincrona per inviare messaggi con bottone
 async def send_button(chat_id, text, button_text, url):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                    "reply_markup": {
-                        "inline_keyboard": [[{"text": button_text, "url": url}]]
-                    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": {
+                    "inline_keyboard": [[{"text": button_text, "url": url}]]
                 }
-            ) as response:
-                # Puoi aggiungere un controllo sulla risposta, se necessario
-                if response.status != 200:
-                    print(f"Errore nel sendMessage: {response.status}")
-    except Exception as e:
-        print(f"Errore nell'invio del messaggio: {e}")
+            }
+        ) as response:
+            if response.status != 200:
+                print(f"Errore nell'invio del messaggio Telegram: {response.status}")
