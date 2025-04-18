@@ -1,8 +1,6 @@
 import json
 import os
 import requests
-import traceback
-from time import sleep
 from appwrite.client import Client
 from appwrite.services.databases import Databases
 
@@ -67,17 +65,14 @@ def create_payment_link(chat_id, amount):
     res.raise_for_status()
     return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
-def send_payment_link(chat_id, databases, context):
+def send_payment_link(chat_id, databases, context, first_time=False):
     if not chat_id:
         return
-
     payment_link = create_payment_link(chat_id, 0.99)
 
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-    except Exception as e:
-        context.error("❗ Errore get_document:")
-        context.error(traceback.format_exc())
+    except:
         user_data = None
 
     if not user_data:
@@ -86,9 +81,8 @@ def send_payment_link(chat_id, databases, context):
         user_data["payment_pending"] = True
         databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
-    sleep(0.2)
+    text = "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!" if not first_time else "☕ Vuoi vedere altre foto esclusive? Offrimi un caffè e continua!"
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
             [{"text": "💳 Paga 0,99€ per la prossima foto", "url": payment_link}]
@@ -96,13 +90,14 @@ def send_payment_link(chat_id, databases, context):
     }
     payload = {
         "chat_id": chat_id,
-        "text": "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!",
+        "text": text,
         "reply_markup": json.dumps(keyboard)
     }
-    requests.post(url, data=payload)
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
 
-def send_view_photo_button(chat_id):
+def send_view_photo_button(chat_id, first_photo=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    text = "❤️ Pagamento ricevuto! Premi per vedere la tua prima foto 👇" if first_photo else "❤️ Pagamento ricevuto! Premi per vedere la prossima foto 👇"
     keyboard = {
         "inline_keyboard": [
             [{"text": "📸 Guarda foto", "callback_data": "photo"}]
@@ -110,7 +105,7 @@ def send_view_photo_button(chat_id):
     }
     payload = {
         "chat_id": chat_id,
-        "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 👇",
+        "text": text,
         "reply_markup": json.dumps(keyboard)
     }
     requests.post(url, data=payload)
@@ -120,41 +115,43 @@ def send_photo(chat_id, databases, context):
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
         context.log(f"📦 User data trovati: {user_data}")
     except Exception as e:
-        context.error("❌ Errore nel recupero dati user:")
-        context.error(traceback.format_exc())
+        context.error(f"❌ Errore nel recupero dati user: {e}")
         return
 
     if not user_data:
         context.error("❌ Nessun user_data trovato.")
         return
 
+    if user_data.get("payment_pending") != False:
+        context.log("⚠️ Pagamento non ancora effettuato. Bloccato invio foto.")
+        return
+
     index = user_data.get("photo_index", 0)
     if index >= len(PHOTO_IDS):
         context.log("✅ Tutte le foto già inviate.")
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+            "chat_id": chat_id,
+            "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
+        })
         return
 
     photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[index]}"
     context.log(f"➡️ Invio foto: {photo_url}")
 
-    resp = requests.post(
+    # Blocca doppio invio settando subito a True
+    user_data['payment_pending'] = None
+    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+
+    requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
         data={"chat_id": chat_id, "photo": photo_url}
     )
-    context.log(f"📤 Telegram sendPhoto status: {resp.status_code} - {resp.text}")
 
     user_data['photo_index'] = index + 1
-    user_data['payment_pending'] = None
-
-    try:
-        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
-    except Exception as e:
-        context.error("❌ Errore update_document dopo invio foto:")
-        context.error(traceback.format_exc())
-
-    sleep(0.2)
+    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
     if index + 1 < len(PHOTO_IDS):
-        send_payment_link(chat_id, databases, context)
+        send_payment_link(chat_id, databases, context, first_time=True)
     else:
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
             "chat_id": chat_id,
@@ -169,6 +166,9 @@ async def main(context):
         log_env(context)
         databases = init_appwrite_client()
 
+        content_type = req.headers.get("content-type", "")
+        raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
+
         try:
             data = req.body if isinstance(req.body, dict) else json.loads(req.body)
         except Exception as e:
@@ -182,11 +182,10 @@ async def main(context):
                     user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
                     user_data['payment_pending'] = False
                     databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
-                    send_view_photo_button(chat_id)
+                    send_view_photo_button(chat_id, first_photo=(user_data.get('photo_index', 0) == 0))
                     return res.json({"status": "manual-return ok"}, 200)
                 except Exception as e:
-                    context.error("❗ Errore durante manual-return:")
-                    context.error(traceback.format_exc())
+                    context.error("❗ Errore durante manual-return: " + str(e))
                     return res.json({"status": "manual-return error"}, 500)
             else:
                 return res.json({"status": "missing chat_id"}, 400)
@@ -218,6 +217,5 @@ async def main(context):
         return res.json({"status": "ok"}, 200)
 
     except Exception as e:
-        context.error("❗ Errore generale:")
-        context.error(traceback.format_exc())
+        context.error("❗ Errore generale: " + str(e))
         return res.json({"status": "error", "message": str(e)}, 500)
