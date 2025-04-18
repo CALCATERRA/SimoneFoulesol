@@ -1,6 +1,5 @@
 import os
 import json
-import requests
 from appwrite.client import Client
 from appwrite.services.databases import Databases
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
@@ -15,6 +14,7 @@ APPWRITE_ENDPOINT = os.environ["APPWRITE_ENDPOINT"]
 
 bot = Bot(token=TELEGRAM_TOKEN)
 
+# Foto Google Drive
 PHOTO_IDS = [
     "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG",
     "11uKOYNTCu1bDoetyKfPtRLMTqsYPKKEc",
@@ -22,7 +22,7 @@ PHOTO_IDS = [
     "135lkGQNvf_T4CwtRH-Pu2sG7n30iV1Cu"
 ]
 
-# Appwrite client setup
+# Appwrite client
 client = Client()
 client.set_endpoint(APPWRITE_ENDPOINT)
 client.set_project(APPWRITE_PROJECT_ID)
@@ -31,19 +31,31 @@ db = Databases(client)
 
 def main(context):
     try:
-        payload = json.loads(context.req.body)
-        chat_id = str(payload.get("chat_id", ""))
-
+        body = json.loads(context.req.body)
+        chat_id = str(body.get("chat_id", ""))
         if not chat_id:
-            return context.res.json({"error": "chat_id mancante"}, 400)
+            context.res.send(json.dumps({"error": "chat_id mancante"}), 400)
+            return
 
-        # Recupera documento utente
+        context.res.send(json.dumps({"status": "ricevuto"}), 200)  # ✅ Risponde subito
+
+        # Continua dopo la risposta
+        process_photo_send(chat_id)
+
+    except Exception as e:
+        print("Errore iniziale:", e)
+        context.res.send(json.dumps({"error": str(e)}), 500)
+
+def process_photo_send(chat_id):
+    try:
+        # Cerca l'utente
         response = db.list_documents(DATABASE_ID, COLLECTION_ID, queries=[
             f'equal("chat_id", "{chat_id}")'
         ])
         documents = response["documents"]
         if not documents:
-            return context.res.json({"error": "Utente non trovato"}, 404)
+            print("Utente non trovato.")
+            return
 
         doc = documents[0]
         document_id = doc["$id"]
@@ -51,9 +63,9 @@ def main(context):
 
         if progressivo >= len(PHOTO_IDS):
             bot.send_message(chat_id=chat_id, text="Hai già ricevuto tutte le foto disponibili.")
-            return context.res.json({"status": "completo"})
+            return
 
-        # Invia foto corrente
+        # Invia foto
         photo_index = progressivo
         photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[photo_index]}"
         bot.send_photo(chat_id=chat_id, photo=photo_url)
@@ -64,15 +76,12 @@ def main(context):
             "progressivo": new_progressivo
         })
 
-        # Invia pulsante PayPal per prossima foto
+        # Invia nuovo pulsante PayPal
         if new_progressivo < len(PHOTO_IDS):
             paypal_link = f"https://www.paypal.com/pay?chat_id={chat_id}"
             keyboard = [[InlineKeyboardButton("☕ Offrimi un altro caffè", url=paypal_link)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             bot.send_message(chat_id=chat_id, text="Grazie ❤️ Vuoi vedere la prossima foto esclusiva?", reply_markup=reply_markup)
 
-        return context.res.json({"status": "ok"})
-
     except Exception as e:
-        print("Errore invio foto:", e)
-        return context.res.json({"error": str(e)}, 500)
+        print("Errore invio foto/processo:", e)
