@@ -19,45 +19,44 @@ client = Client()
 client.set_endpoint(APPWRITE_ENDPOINT)
 client.set_project(APPWRITE_PROJECT_ID)
 client.set_key(APPWRITE_API_KEY)
-
 db = Databases(client)
 
 def main(context):
     try:
-        data = json.loads(context.req.body)
+        body = json.loads(context.req.body)
+        context.res.send("OK", 200)  # ✅ Risponde subito per evitare timeout
 
-        if "message" not in data:
-            return context.res.send("OK", 200)
+        # Verifica che sia un messaggio valido
+        if "message" not in body:
+            return
 
-        message = data["message"]
+        message = body["message"]
         chat_id = str(message["chat"]["id"])
         text = message.get("text", "")
 
         if text == "/start":
             handle_start(chat_id)
 
-        return context.res.send("OK", 200)
-
     except Exception as e:
-        print("Errore generale:", e)
-        return context.res.json({"error": str(e)}, 500)
+        print("Errore telegram_bot.py:", e)
+        context.res.send("Errore", 500)
 
 def handle_start(chat_id):
     try:
+        # Cerca utente nel database
         response = db.list_documents(DATABASE_ID, COLLECTION_ID, queries=[
-            f'equal("chat_id", "{chat_id}")'
+            f'equal(\"chat_id\", \"{chat_id}\")'
         ])
         documents = response["documents"]
 
-        if documents:
-            progressivo = documents[0]["progressivo"]
-        else:
+        if not documents:
+            # Crea nuovo utente con progressivo 0
             db.create_document(DATABASE_ID, COLLECTION_ID, document_id="unique()", data={
                 "chat_id": chat_id,
                 "progressivo": 0
             })
-            progressivo = 0
 
+        # Manda pulsante PayPal
         paypal_link = f"https://www.paypal.com/pay?chat_id={chat_id}"
         keyboard = [[InlineKeyboardButton("☕ Paga 0,99€ per iniziare", url=paypal_link)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -65,4 +64,4 @@ def handle_start(chat_id):
         bot.send_message(chat_id=chat_id, text="Clicca qui per iniziare il percorso esclusivo:", reply_markup=reply_markup)
 
     except Exception as e:
-        print("Errore DB o invio:", e)
+        print("Errore DB o Telegram:", e)
