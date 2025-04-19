@@ -76,11 +76,11 @@ def send_payment_link(chat_id, databases):
                     "photo_index": 0
                 })
             except AppwriteException as ce:
-                msg = getattr(ce, 'message', None) or getattr(ce, 'response', '') or str(ce)
+                msg = extract_error_message(ce)
                 print(f"[create_document ERROR] chat_id={chat_id}: {msg}")
                 return
         else:
-            msg = getattr(e, 'message', None) or getattr(e, 'response', '') or str(e)
+            msg = extract_error_message(e)
             print(f"[get_document ERROR] chat_id={chat_id}: {msg}")
             return
 
@@ -95,6 +95,15 @@ def send_payment_link(chat_id, databases):
         "reply_markup": json.dumps(keyboard)
     }
     requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
+
+def extract_error_message(exception):
+    try:
+        return exception.message
+    except AttributeError:
+        try:
+            return json.loads(exception.response).get("message", "Unknown Appwrite error")
+        except Exception:
+            return str(exception)
 
 def send_view_photo_button(chat_id, photo_number):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -186,3 +195,4 @@ async def main(context):
             return res.json({"status": "photo sent"}, 200)
 
     return res.json({"status": "ok"}, 200)
+
