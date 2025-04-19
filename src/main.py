@@ -2,8 +2,8 @@ import json
 import os
 import requests
 from appwrite.client import Client
-from appwrite.exception import AppwriteException
 from appwrite.services.databases import Databases
+from appwrite.exception import AppwriteException
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -68,16 +68,20 @@ def send_payment_link(chat_id, databases):
 
     payment_link = create_payment_link(chat_id, 0.99)
 
+    # Verifica se l'utente esiste già
     try:
         databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
     except AppwriteException as e:
-        # Se il documento non esiste, lo creiamo
-        try:
-            databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {
-                "photo_index": 0
-            })
-        except AppwriteException as ce:
-            print(f"[create_document ERROR] chat_id={chat_id}: {ce}")
+        if e.code == 404:
+            try:
+                databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {
+                    "photo_index": 0
+                })
+            except AppwriteException as ce:
+                print(f"[create_document ERROR] chat_id={chat_id}: {getattr(ce, 'message', str(ce))}")
+                return
+        else:
+            print(f"[get_document ERROR] chat_id={chat_id}: {getattr(e, 'message', str(e))}")
             return
 
     keyboard = {
@@ -110,7 +114,7 @@ def send_photo(chat_id, databases):
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
     except AppwriteException as e:
-        print(f"[get_document ERROR] chat_id={chat_id}: {e}")
+        print(f"[send_photo ERROR] chat_id={chat_id}: {getattr(e, 'message', str(e))}")
         return
 
     photo_index = user_data.get("photo_index", 0)
@@ -128,14 +132,12 @@ def send_photo(chat_id, databases):
         data={"chat_id": chat_id, "photo": photo_url}
     )
 
+    user_data["photo_index"] = photo_index + 1
     try:
-        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, {
-            "photo_index": photo_index + 1
-        })
+        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
     except AppwriteException as e:
-        print(f"[update_document ERROR] chat_id={chat_id}: {e}")
+        print(f"[update_document ERROR] chat_id={chat_id}: {getattr(e, 'message', str(e))}")
 
-    # Se ci sono ancora foto disponibili, mostra il bottone per il pagamento successivo
     if photo_index + 1 < len(PHOTO_IDS):
         send_payment_link(chat_id, databases)
 
@@ -158,8 +160,8 @@ async def main(context):
                 photo_index = user_data.get("photo_index", 0)
                 send_view_photo_button(chat_id, photo_index + 1)
                 return res.json({"status": "manual-return ok"}, 200)
-            except Exception as e:
-                return res.json({"status": "manual-return error", "message": str(e)}, 500)
+            except AppwriteException as e:
+                return res.json({"status": "manual-return error", "message": getattr(e, 'message', str(e))}, 500)
         else:
             return res.json({"status": "missing chat_id"}, 400)
 
