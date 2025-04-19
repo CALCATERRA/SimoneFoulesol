@@ -2,6 +2,7 @@ import json
 import os
 import requests
 from appwrite.client import Client
+from appwrite.exception import AppwriteException
 from appwrite.services.databases import Databases
 
 # Config
@@ -28,6 +29,17 @@ def init_appwrite_client():
     client.set_key(APPWRITE_API_KEY)
     return Databases(client)
 
+def get_paypal_token():
+    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
+    headers = {
+        "Accept": "application/json",
+        "Accept-Language": "en_US"
+    }
+    data = {"grant_type": "client_credentials"}
+    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
+    res.raise_for_status()
+    return res.json()['access_token']
+
 def create_payment_link(chat_id, amount):
     token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
@@ -50,30 +62,23 @@ def create_payment_link(chat_id, amount):
     res.raise_for_status()
     return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
-def get_paypal_token():
-    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
-    headers = {
-        "Accept": "application/json",
-        "Accept-Language": "en_US"
-    }
-    data = {"grant_type": "client_credentials"}
-    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    res.raise_for_status()
-    return res.json()['access_token']
-
 def send_payment_link(chat_id, databases):
     if not chat_id:
         return
+
     payment_link = create_payment_link(chat_id, 0.99)
 
     try:
-        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-    except:
-        user_data = None
-
-    if not user_data:
-        databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"photo_index": 0})
-    # Non serve più settare payment_pending
+        databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+    except AppwriteException as e:
+        # Se il documento non esiste, lo creiamo
+        try:
+            databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {
+                "photo_index": 0
+            })
+        except AppwriteException as ce:
+            print(f"[create_document ERROR] chat_id={chat_id}: {ce}")
+            return
 
     keyboard = {
         "inline_keyboard": [
@@ -104,7 +109,8 @@ def send_view_photo_button(chat_id, photo_number):
 def send_photo(chat_id, databases):
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-    except Exception as e:
+    except AppwriteException as e:
+        print(f"[get_document ERROR] chat_id={chat_id}: {e}")
         return
 
     photo_index = user_data.get("photo_index", 0)
@@ -122,10 +128,14 @@ def send_photo(chat_id, databases):
         data={"chat_id": chat_id, "photo": photo_url}
     )
 
-    user_data["photo_index"] = photo_index + 1
-    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+    try:
+        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, {
+            "photo_index": photo_index + 1
+        })
+    except AppwriteException as e:
+        print(f"[update_document ERROR] chat_id={chat_id}: {e}")
 
-    # Invia il pulsante per la prossima donazione solo se ci sono ancora foto
+    # Se ci sono ancora foto disponibili, mostra il bottone per il pagamento successivo
     if photo_index + 1 < len(PHOTO_IDS):
         send_payment_link(chat_id, databases)
 
@@ -167,7 +177,6 @@ async def main(context):
         callback_id = callback.get("id")
         callback_data = callback.get("data", "")
 
-        # Risponde per evitare spinner
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
             data={"callback_query_id": callback_id}
