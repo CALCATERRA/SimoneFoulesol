@@ -3,7 +3,6 @@ import os
 import requests
 from appwrite.client import Client
 from appwrite.services.databases import Databases
-from appwrite.exception import AppwriteException
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -22,6 +21,16 @@ PHOTO_IDS = [
     "135lkGQNvf_T4CwtRH-Pu2sG7n30iV1Cu"
 ]
 
+def log_env(context):
+    context.log("🔧 TELEGRAM_TOKEN:", "✅" if TELEGRAM_TOKEN else "❌ MANCANTE")
+    context.log("🔧 PAYPAL_CLIENT_ID:", "✅" if PAYPAL_CLIENT_ID else "❌ MANCANTE")
+    context.log("🔧 PAYPAL_SECRET:", "✅" if PAYPAL_SECRET else "❌ MANCANTE")
+    context.log("🔧 DATABASE_ID:", "✅" if DATABASE_ID else "❌ MANCANTE")
+    context.log("🔧 COLLECTION_ID:", "✅" if COLLECTION_ID else "❌ MANCANTE")
+    context.log("🔧 APPWRITE_ENDPOINT:", APPWRITE_ENDPOINT or "❌ MANCANTE")
+    context.log("🔧 APPWRITE_PROJECT_ID:", APPWRITE_PROJECT_ID or "❌ MANCANTE")
+    context.log("🔧 APPWRITE_API_KEY:", "✅" if APPWRITE_API_KEY else "❌ MANCANTE")
+
 def init_appwrite_client():
     client = Client()
     client.set_endpoint(APPWRITE_ENDPOINT)
@@ -29,13 +38,18 @@ def init_appwrite_client():
     client.set_key(APPWRITE_API_KEY)
     return Databases(client)
 
+def get_paypal_token():
+    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
+    headers = {"Accept": "application/json", "Accept-Language": "en_US"}
+    data = {"grant_type": "client_credentials"}
+    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
+    res.raise_for_status()
+    return res.json()['access_token']
+
 def create_payment_link(chat_id, amount):
     token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}"
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
     data = {
         "intent": "CAPTURE",
         "purchase_units": [{
@@ -51,38 +65,23 @@ def create_payment_link(chat_id, amount):
     res.raise_for_status()
     return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
-def get_paypal_token():
-    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
-    headers = {
-        "Accept": "application/json",
-        "Accept-Language": "en_US"
-    }
-    data = {"grant_type": "client_credentials"}
-    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    res.raise_for_status()
-    return res.json()['access_token']
-
-def send_payment_link(chat_id, databases):
+def send_payment_link(chat_id, databases, context, first_time=False):
     if not chat_id:
         return
     payment_link = create_payment_link(chat_id, 0.99)
 
     try:
-        databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-    except AppwriteException as e:
-        if e.code == 404:
-            try:
-                databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {
-                    "photo_index": 0
-                })
-            except AppwriteException as ce:
-                msg = extract_error_message(ce)
-                print(f"[create_document ERROR] chat_id={chat_id}: {msg}")
-                return
-        else:
-            msg = extract_error_message(e)
-            print(f"[get_document ERROR] chat_id={chat_id}: {msg}")
-            return
+        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+    except:
+        user_data = None
+
+    if not user_data:
+        databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"payment_pending": True, "photo_index": 0})
+    else:
+        user_data["payment_pending"] = True
+        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+
+    text = "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!" if not first_time else "☕ Vuoi vedere altre foto esclusive? Offrimi un caffè e continua!"
 
     keyboard = {
         "inline_keyboard": [
@@ -91,108 +90,132 @@ def send_payment_link(chat_id, databases):
     }
     payload = {
         "chat_id": chat_id,
-        "text": "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!",
+        "text": text,
         "reply_markup": json.dumps(keyboard)
     }
     requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
 
-def extract_error_message(exception):
-    try:
-        return exception.message
-    except AttributeError:
-        try:
-            return json.loads(exception.response).get("message", "Unknown Appwrite error")
-        except Exception:
-            return str(exception)
-
-def send_view_photo_button(chat_id, photo_number):
+def send_view_photo_button(chat_id, first_photo=False):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    text = "❤️ Pagamento ricevuto! Premi per vedere la tua prima foto 👇" if first_photo else "❤️ Pagamento ricevuto! Premi per vedere la prossima foto 👇"
     keyboard = {
         "inline_keyboard": [
-            [{"text": f"📸 Guarda foto {photo_number}", "callback_data": "photo"}]
+            [{"text": "📸 Guarda foto", "callback_data": "photo"}]
         ]
     }
     payload = {
         "chat_id": chat_id,
-        "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 👇",
+        "text": text,
         "reply_markup": json.dumps(keyboard)
     }
     requests.post(url, data=payload)
 
-def send_photo(chat_id, databases):
+def send_photo(chat_id, databases, context):
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+        context.log(f"📦 User data trovati: {user_data}")
     except Exception as e:
-        print(f"[send_photo ERROR] chat_id={chat_id}: {e}")
+        context.error(f"❌ Errore nel recupero dati user: {e}")
         return
 
-    photo_index = user_data.get("photo_index", 0)
+    if not user_data:
+        context.error("❌ Nessun user_data trovato.")
+        return
 
-    if photo_index >= len(PHOTO_IDS):
+    if user_data.get("payment_pending") != False:
+        context.log("⚠️ Pagamento non ancora effettuato. Bloccato invio foto.")
+        return
+
+    index = user_data.get("photo_index", 0)
+    if index >= len(PHOTO_IDS):
+        context.log("✅ Tutte le foto già inviate.")
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
             "chat_id": chat_id,
             "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
         })
         return
 
-    photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[photo_index]}"
+    photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[index]}"
+    context.log(f"➡️ Invio foto: {photo_url}")
+
+    # Blocca doppio invio settando subito a True
+    user_data['payment_pending'] = None
+    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+
     requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
         data={"chat_id": chat_id, "photo": photo_url}
     )
 
-    user_data["photo_index"] = photo_index + 1
+    user_data['photo_index'] = index + 1
     databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
-    if photo_index + 1 < len(PHOTO_IDS):
-        send_payment_link(chat_id, databases)
+    if index + 1 < len(PHOTO_IDS):
+        send_payment_link(chat_id, databases, context, first_time=True)
+    else:
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+            "chat_id": chat_id,
+            "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
+        })
 
 async def main(context):
     req = context.req
     res = context.res
 
-    databases = init_appwrite_client()
-
     try:
-        data = req.body if isinstance(req.body, dict) else json.loads(req.body)
-    except Exception:
-        return res.json({"status": "invalid json"}, 400)
+        log_env(context)
+        databases = init_appwrite_client()
 
-    if data.get("source") == "manual-return":
-        chat_id = str(data.get("chat_id"))
-        if chat_id:
-            try:
-                user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-                photo_index = user_data.get("photo_index", 0)
-                send_view_photo_button(chat_id, photo_index + 1)
-                return res.json({"status": "manual-return ok"}, 200)
-            except Exception as e:
-                return res.json({"status": "manual-return error", "message": str(e)}, 500)
-        else:
-            return res.json({"status": "missing chat_id"}, 400)
+        content_type = req.headers.get("content-type", "")
+        raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
 
-    message = data.get("message")
-    callback = data.get("callback_query")
+        try:
+            data = req.body if isinstance(req.body, dict) else json.loads(req.body)
+        except Exception as e:
+            context.error("❗ JSON parsing error: " + str(e))
+            return res.json({"status": "invalid json"}, 400)
 
-    if message:
-        chat_id = str(message.get("chat", {}).get("id"))
-        text = message.get("text", "")
-        if chat_id and text == "/start":
-            send_payment_link(chat_id, databases)
+        if data.get("source") == "manual-return":
+            chat_id = str(data.get("chat_id"))
+            if chat_id:
+                try:
+                    user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+                    user_data['payment_pending'] = False
+                    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+                    send_view_photo_button(chat_id, first_photo=(user_data.get('photo_index', 0) == 0))
+                    return res.json({"status": "manual-return ok"}, 200)
+                except Exception as e:
+                    context.error("❗ Errore durante manual-return: " + str(e))
+                    return res.json({"status": "manual-return error"}, 500)
+            else:
+                return res.json({"status": "missing chat_id"}, 400)
 
-    elif callback:
-        chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
-        callback_id = callback.get("id")
-        callback_data = callback.get("data", "")
+        message = data.get("message")
+        callback = data.get("callback_query")
 
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
-            data={"callback_query_id": callback_id}
-        )
+        if message:
+            chat_id = str(message.get("chat", {}).get("id"))
+            text = message.get("text", "")
+            if chat_id and text == "/start":
+                send_payment_link(chat_id, databases, context)
 
-        if chat_id and callback_data == "photo":
-            send_photo(chat_id, databases)
-            return res.json({"status": "photo sent"}, 200)
+        elif callback:
+            chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
+            callback_id = callback.get("id")
+            callback_data = callback.get("data", "")
 
-    return res.json({"status": "ok"}, 200)
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
+                data={"callback_query_id": callback_id}
+            )
 
+            if chat_id and callback_data == "photo":
+                context.log(f"📸 Invio foto per chat_id: {chat_id}")
+                send_photo(chat_id, databases, context)
+                return res.json({"status": "photo sent"}, 200)
+
+        return res.json({"status": "ok"}, 200)
+
+    except Exception as e:
+        context.error("❗ Errore generale: " + str(e))
+        return res.json({"status": "error", "message": str(e)}, 500)
