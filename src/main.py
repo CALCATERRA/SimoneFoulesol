@@ -29,17 +29,6 @@ def init_appwrite_client():
     client.set_key(APPWRITE_API_KEY)
     return Databases(client)
 
-def get_paypal_token():
-    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
-    headers = {
-        "Accept": "application/json",
-        "Accept-Language": "en_US"
-    }
-    data = {"grant_type": "client_credentials"}
-    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    res.raise_for_status()
-    return res.json()['access_token']
-
 def create_payment_link(chat_id, amount):
     token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
@@ -62,13 +51,22 @@ def create_payment_link(chat_id, amount):
     res.raise_for_status()
     return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
+def get_paypal_token():
+    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
+    headers = {
+        "Accept": "application/json",
+        "Accept-Language": "en_US"
+    }
+    data = {"grant_type": "client_credentials"}
+    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
+    res.raise_for_status()
+    return res.json()['access_token']
+
 def send_payment_link(chat_id, databases):
     if not chat_id:
         return
-
     payment_link = create_payment_link(chat_id, 0.99)
 
-    # Verifica se l'utente esiste già
     try:
         databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
     except AppwriteException as e:
@@ -78,10 +76,12 @@ def send_payment_link(chat_id, databases):
                     "photo_index": 0
                 })
             except AppwriteException as ce:
-                print(f"[create_document ERROR] chat_id={chat_id}: {getattr(ce, 'message', str(ce))}")
+                msg = getattr(ce, 'message', None) or getattr(ce, 'response', '') or str(ce)
+                print(f"[create_document ERROR] chat_id={chat_id}: {msg}")
                 return
         else:
-            print(f"[get_document ERROR] chat_id={chat_id}: {getattr(e, 'message', str(e))}")
+            msg = getattr(e, 'message', None) or getattr(e, 'response', '') or str(e)
+            print(f"[get_document ERROR] chat_id={chat_id}: {msg}")
             return
 
     keyboard = {
@@ -113,8 +113,8 @@ def send_view_photo_button(chat_id, photo_number):
 def send_photo(chat_id, databases):
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-    except AppwriteException as e:
-        print(f"[send_photo ERROR] chat_id={chat_id}: {getattr(e, 'message', str(e))}")
+    except Exception as e:
+        print(f"[send_photo ERROR] chat_id={chat_id}: {e}")
         return
 
     photo_index = user_data.get("photo_index", 0)
@@ -133,10 +133,7 @@ def send_photo(chat_id, databases):
     )
 
     user_data["photo_index"] = photo_index + 1
-    try:
-        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
-    except AppwriteException as e:
-        print(f"[update_document ERROR] chat_id={chat_id}: {getattr(e, 'message', str(e))}")
+    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
 
     if photo_index + 1 < len(PHOTO_IDS):
         send_payment_link(chat_id, databases)
@@ -160,8 +157,8 @@ async def main(context):
                 photo_index = user_data.get("photo_index", 0)
                 send_view_photo_button(chat_id, photo_index + 1)
                 return res.json({"status": "manual-return ok"}, 200)
-            except AppwriteException as e:
-                return res.json({"status": "manual-return error", "message": getattr(e, 'message', str(e))}, 500)
+            except Exception as e:
+                return res.json({"status": "manual-return error", "message": str(e)}, 500)
         else:
             return res.json({"status": "missing chat_id"}, 400)
 
