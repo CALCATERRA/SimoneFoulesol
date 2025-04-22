@@ -22,14 +22,15 @@ PHOTO_IDS = [
 ]
 
 def init_appwrite_client():
+    print("[init_appwrite_client] Inizializzazione client Appwrite.")
     client = Client()
     client.set_endpoint(APPWRITE_ENDPOINT)
     client.set_project(APPWRITE_PROJECT_ID)
     client.set_key(APPWRITE_API_KEY)
     return Databases(client)
 
-def get_paypal_token(context):
-    context.log("[get_paypal_token] Richiesta token PayPal...")
+def get_paypal_token():
+    print("[get_paypal_token] Richiesta token PayPal...")
     url = "https://api.sandbox.paypal.com/v1/oauth2/token"
     headers = {
         "Accept": "application/json",
@@ -39,15 +40,15 @@ def get_paypal_token(context):
     try:
         res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
         res.raise_for_status()
-        context.log("[get_paypal_token] Token ottenuto con successo.")
+        print("[get_paypal_token] Token ottenuto con successo.")
         return res.json()['access_token']
     except Exception as e:
-        context.error(f"[get_paypal_token] Errore: {e}")
+        print(f"[get_paypal_token] Errore: {e}")
         raise
 
-def create_payment_link(chat_id, amount, context):
-    context.log(f"[create_payment_link] Creazione link pagamento per chat_id={chat_id}...")
-    token = get_paypal_token(context)
+def create_payment_link(chat_id, amount):
+    print(f"[create_payment_link] Creazione link pagamento per chat_id={chat_id}...")
+    token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
     headers = {
         "Content-Type": "application/json",
@@ -68,38 +69,38 @@ def create_payment_link(chat_id, amount, context):
         res = requests.post(url, headers=headers, json=data)
         res.raise_for_status()
         approval_link = next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
-        context.log(f"[create_payment_link] Link approvazione creato: {approval_link}")
+        print(f"[create_payment_link] Link approvazione creato: {approval_link}")
         return approval_link
     except Exception as e:
-        context.error(f"[create_payment_link] Errore: {e}")
+        print(f"[create_payment_link] Errore: {e}")
         raise
 
-def send_payment_link(chat_id, databases, context):
-    context.log(f"[send_payment_link] Avvio per chat_id={chat_id}")
+def send_payment_link(chat_id, databases):
+    print(f"[send_payment_link] Avvio per chat_id={chat_id}")
     if not chat_id:
-        context.error("[send_payment_link] Chat ID mancante.")
+        print("[send_payment_link] Chat ID mancante.")
         return
     try:
-        payment_link = create_payment_link(chat_id, 0.99, context)
+        payment_link = create_payment_link(chat_id, 0.99)
     except Exception as e:
-        context.error(f"[send_payment_link] Errore creazione link PayPal: {e}")
+        print(f"[send_payment_link] Errore creazione link PayPal: {e}")
         return
 
     try:
         user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, str(chat_id))
-        context.log(f"[send_payment_link] Documento utente esistente: {user_data}")
+        print(f"[send_payment_link] Documento utente esistente: {user_data}")
     except Exception as e:
-        context.error(f"[send_payment_link] Documento non trovato. Errore: {e}")
+        print(f"[send_payment_link] Documento non trovato. Errore: {str(e)}")
         try:
             databases.create_document(
                 database_id=DATABASE_ID,
                 collection_id=COLLECTION_ID,
-                document_id=str(chat_id),
+                document_id=str(chat_id),  # assicurati che sia stringa
                 data={"photo_index": 0}
             )
-            context.log("[send_payment_link] Documento creato.")
+            print("[send_payment_link] Documento creato.")
         except Exception as e:
-            context.error(f"[send_payment_link] Errore creazione documento: {e}")
+            print(f"[send_payment_link] Errore creazione documento: {str(e)}")
             return
 
     keyboard = {
@@ -114,67 +115,80 @@ def send_payment_link(chat_id, databases, context):
     }
     try:
         response = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
-        context.log(f"[send_payment_link] Messaggio Telegram inviato. Status: {response.status_code}")
+        print(f"[send_payment_link] Messaggio Telegram inviato. Status: {response.status_code}")
     except Exception as e:
-        context.error(f"[send_payment_link] Errore invio messaggio Telegram: {e}")
+        print(f"[send_payment_link] Errore invio messaggio Telegram: {e}")
 
-def send_photo(chat_id, databases):
-    try:
-        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, str(chat_id))
-        index = user_data.get("photo_index", 0)
-        if index >= len(PHOTO_IDS):
-            return
-        file_id = PHOTO_IDS[index]
-        photo_url = f"https://drive.google.com/uc?id={file_id}"
-
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={
-            "chat_id": chat_id,
-            "photo": photo_url
-        })
-
-        databases.update_document(
-            database_id=DATABASE_ID,
-            collection_id=COLLECTION_ID,
-            document_id=str(chat_id),
-            data={"photo_index": index + 1}
-        )
-    except Exception as e:
-        print(f"[send_photo] Errore invio foto: {e}")
-
-def send_view_photo_button(chat_id, photo_index):
-    photo_url = f"https://drive.google.com/uc?id={PHOTO_IDS[photo_index - 1]}"
+def send_view_photo_button(chat_id, photo_number):
+    print(f"[send_view_photo_button] Invio bottone per foto {photo_number} a chat_id={chat_id}")
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
-            [{"text": "📸 Guarda la foto", "url": photo_url}]
+            [{"text": f"📸 Guarda foto {photo_number}", "callback_data": "photo"}]
         ]
     }
     payload = {
         "chat_id": chat_id,
-        "text": "Ecco la tua foto! Vuoi vederne un'altra?",
+        "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 👇",
         "reply_markup": json.dumps(keyboard)
     }
     try:
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
+        requests.post(url, data=payload)
     except Exception as e:
-        print(f"[send_view_photo_button] Errore: {e}")
+        print(f"[send_view_photo_button] Errore invio bottone: {e}")
+
+def send_photo(chat_id, databases):
+    print(f"[send_photo] Invio foto a chat_id={chat_id}")
+    try:
+        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, str(chat_id))
+    except Exception as e:
+        print(f"[send_photo] Errore recupero dati utente: {e}")
+        return
+
+    photo_index = user_data.get("photo_index", 0)
+    print(f"[send_photo] Indice foto corrente: {photo_index}")
+
+    if photo_index >= len(PHOTO_IDS):
+        print("[send_photo] Nessuna foto rimanente.")
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+            "chat_id": chat_id,
+            "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
+        })
+        return
+
+    photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[photo_index]}"
+    requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
+        data={"chat_id": chat_id, "photo": photo_url}
+    )
+
+    user_data["photo_index"] = photo_index + 1
+    try:
+        databases.update_document(DATABASE_ID, COLLECTION_ID, str(chat_id), user_data)
+        print(f"[send_photo] Aggiornato photo_index a {photo_index + 1}")
+    except Exception as e:
+        print(f"[send_photo] Errore aggiornamento documento: {e}")
+
+    if photo_index + 1 < len(PHOTO_IDS):
+        send_payment_link(chat_id, databases)
 
 async def main(context):
     req = context.req
     res = context.res
 
-    context.log("[main] Funzione avviata.")
+    print("[main] Funzione avviata.")
     databases = init_appwrite_client()
 
     try:
         data = req.body if isinstance(req.body, dict) else json.loads(req.body)
-        context.log(f"[main] Dati ricevuti: {data}")
+        print(f"[main] Dati ricevuti: {data}")
     except Exception as e:
-        context.error(f"[main] Errore parsing JSON: {e}")
+        print(f"[main] Errore parsing JSON: {e}")
         return res.json({"status": "invalid json"}, 400)
 
     if data.get("source") == "manual-return":
         chat_id = str(data.get("chat_id"))
-        context.log(f"[main] Callback manual-return per chat_id={chat_id}")
+        print(f"[main] Callback manual-return per chat_id={chat_id}")
         if chat_id:
             try:
                 user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
@@ -182,10 +196,10 @@ async def main(context):
                 send_view_photo_button(chat_id, photo_index + 1)
                 return res.json({"status": "manual-return ok"}, 200)
             except Exception as e:
-                context.error(f"[main] Errore manual-return: {e}")
+                print(f"[main] Errore manual-return: {e}")
                 return res.json({"status": "manual-return error", "message": str(e)}, 500)
         else:
-            context.error("[main] chat_id mancante in manual-return.")
+            print("[main] chat_id mancante in manual-return.")
             return res.json({"status": "missing chat_id"}, 400)
 
     message = data.get("message")
@@ -194,15 +208,15 @@ async def main(context):
     if message:
         chat_id = str(message.get("chat", {}).get("id"))
         text = message.get("text", "")
-        context.log(f"[main] Messaggio ricevuto da chat_id={chat_id}, testo={text}")
+        print(f"[main] Messaggio ricevuto da chat_id={chat_id}, testo={text}")
         if chat_id and text == "/start":
-            send_payment_link(chat_id, databases, context)
+            send_payment_link(chat_id, databases)
 
     elif callback:
         chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
         callback_id = callback.get("id")
         callback_data = callback.get("data", "")
-        context.log(f"[main] Callback ricevuto da chat_id={chat_id}, data={callback_data}")
+        print(f"[main] Callback ricevuto da chat_id={chat_id}, data={callback_data}")
 
         try:
             requests.post(
@@ -210,11 +224,11 @@ async def main(context):
                 data={"callback_query_id": callback_id}
             )
         except Exception as e:
-            context.error(f"[main] Errore risposta callback query: {e}")
+            print(f"[main] Errore risposta callback query: {e}")
 
         if chat_id and callback_data == "photo":
             send_photo(chat_id, databases)
             return res.json({"status": "photo sent"}, 200)
 
-    context.log("[main] Fine esecuzione normale.")
+    print("[main] Fine esecuzione normale.")
     return res.json({"status": "ok"}, 200)
