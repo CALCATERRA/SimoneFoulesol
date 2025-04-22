@@ -167,63 +167,63 @@ def send_photo(chat_id, databases):
     if photo_index + 1 < len(PHOTO_IDS):
         send_payment_link(chat_id, databases)
 
-# async def main(context):
-#     req = context.req
-#     res = context.res
-#
-#     print("[main] Funzione avviata.")
-#     databases = init_appwrite_client()
-#
-#     try:
-#         data = req.body if isinstance(req.body, dict) else json.loads(req.body)
-#         print(f"[main] Dati ricevuti: {data}")
-#     except Exception as e:
-#         print(f"[main] Errore parsing JSON: {e}")
-#         return res.json({"status": "invalid json"}, 400)
-#
-#     if data.get("source") == "manual-return":
-#         chat_id = str(data.get("chat_id"))
-#         print(f"[main] Callback manual-return per chat_id={chat_id}")
-#         if chat_id:
-#             try:
-#                 user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-#                 photo_index = user_data.get("photo_index", 0)
-#                 send_view_photo_button(chat_id, photo_index + 1)
-#                 return res.json({"status": "manual-return ok"}, 200)
-#             except Exception as e:
-#                 print(f"[main] Errore manual-return: {e}")
-#                 return res.json({"status": "manual-return error", "message": str(e)}, 500)
-#         else:
-#             print("[main] chat_id mancante in manual-return.")
-#             return res.json({"status": "missing chat_id"}, 400)
-#
-#     message = data.get("message")
-#     callback = data.get("callback_query")
-#
-#     if message:
-#         chat_id = str(message.get("chat", {}).get("id"))
-#         text = message.get("text", "")
-#         print(f"[main] Messaggio ricevuto da chat_id={chat_id}, testo={text}")
-#         if chat_id and text == "/start":
-#             send_payment_link(chat_id, databases)
-#
-#     elif callback:
-#         chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
-#         callback_id = callback.get("id")
-#         callback_data = callback.get("data", "")
-#         print(f"[main] Callback ricevuto da chat_id={chat_id}, data={callback_data}")
-#
-#         try:
-#             requests.post(
-#                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
-#                 data={"callback_query_id": callback_id}
-#             )
-#         except Exception as e:
-#             print(f"[main] Errore risposta callback query: {e}")
-#
-#         if chat_id and callback_data == "photo":
-#             send_photo(chat_id, databases)
-#             return res.json({"status": "photo sent"}, 200)
-#
-#     print("[main] Fine esecuzione normale.")
-#     return res.json({"status": "ok"}, 200)
+async def main(context):
+    req = context.req
+    res = context.res
+
+    print("[main] Funzione avviata.")
+    databases = init_appwrite_client()
+
+    try:
+        data = req.body if isinstance(req.body, dict) else json.loads(req.body)
+        print(f"[main] Dati ricevuti: {data}")
+    except Exception as e:
+        print(f"[main] Errore parsing JSON: {e}")
+        return res.json({"status": "invalid json"}, 400)
+
+    if data.get("source") == "manual-return":
+        chat_id = str(data.get("chat_id"))
+        print(f"[main] Callback manual-return per chat_id={chat_id}")
+        if chat_id:
+            try:
+                user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+                photo_index = user_data.get("photo_index", 0)
+                send_view_photo_button(chat_id, photo_index + 1)
+                return res.json({"status": "manual-return ok"}, 200)
+            except Exception as e:
+                print(f"[main] Errore manual-return: {e}")
+                return res.json({"status": "manual-return error", "message": str(e)}, 500)
+        else:
+            print("[main] chat_id mancante in manual-return.")
+            return res.json({"status": "missing chat_id"}, 400)
+
+    message = data.get("message")
+    callback = data.get("callback_query")
+
+    if message:
+        chat_id = str(message.get("chat", {}).get("id"))
+        text = message.get("text", "")
+        print(f"[main] Messaggio ricevuto da chat_id={chat_id}, testo={text}")
+        if chat_id and text == "/start":
+            send_payment_link(chat_id, databases)
+
+    elif callback:
+        chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
+        callback_id = callback.get("id")
+        callback_data = callback.get("data", "")
+        print(f"[main] Callback ricevuto da chat_id={chat_id}, data={callback_data}")
+
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
+                data={"callback_query_id": callback_id}
+            )
+        except Exception as e:
+            print(f"[main] Errore risposta callback query: {e}")
+
+        if chat_id and callback_data == "photo":
+            send_photo(chat_id, databases)
+            return res.json({"status": "photo sent"}, 200)
+
+    print("[main] Fine esecuzione normale.")
+    return res.json({"status": "ok"}, 200)
