@@ -87,15 +87,20 @@ def send_payment_link(chat_id, databases):
         return
 
     try:
-        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, str(chat_id))
         print(f"[send_payment_link] Documento utente esistente: {user_data}")
     except Exception as e:
-        print(f"[send_payment_link] Documento non trovato. Errore: {e}")
+        print(f"[send_payment_link] Documento non trovato. Errore: {str(e)}")
         try:
-            databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"photo_index": 0})
+            databases.create_document(
+                database_id=DATABASE_ID,
+                collection_id=COLLECTION_ID,
+                document_id=str(chat_id),  # assicurati che sia stringa
+                data={"photo_index": 0}
+            )
             print("[send_payment_link] Documento creato.")
         except Exception as e:
-            print(f"[send_payment_link] Errore creazione documento: {e}")
+            print(f"[send_payment_link] Errore creazione documento: {str(e)}")
             return
 
     keyboard = {
@@ -135,7 +140,7 @@ def send_view_photo_button(chat_id, photo_number):
 def send_photo(chat_id, databases):
     print(f"[send_photo] Invio foto a chat_id={chat_id}")
     try:
-        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, str(chat_id))
     except Exception as e:
         print(f"[send_photo] Errore recupero dati utente: {e}")
         return
@@ -159,7 +164,7 @@ def send_photo(chat_id, databases):
 
     user_data["photo_index"] = photo_index + 1
     try:
-        databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+        databases.update_document(DATABASE_ID, COLLECTION_ID, str(chat_id), user_data)
         print(f"[send_photo] Aggiornato photo_index a {photo_index + 1}")
     except Exception as e:
         print(f"[send_photo] Errore aggiornamento documento: {e}")
