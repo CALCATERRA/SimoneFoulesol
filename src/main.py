@@ -118,9 +118,45 @@ def send_payment_link(chat_id, databases, context):
     except Exception as e:
         context.error(f"[send_payment_link] Errore invio messaggio Telegram: {e}")
 
-# Il resto della funzione `main` (incluso send_photo e send_view_photo_button) non cambia a livello di logging, 
-# ma se vuoi li aggiorno tutti allo stesso stile.
-# Fammi sapere se vuoi anche il resto del file aggiornato con context.log/error, oppure solo questa parte.
+def send_photo(chat_id, databases):
+    try:
+        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, str(chat_id))
+        index = user_data.get("photo_index", 0)
+        if index >= len(PHOTO_IDS):
+            return
+        file_id = PHOTO_IDS[index]
+        photo_url = f"https://drive.google.com/uc?id={file_id}"
+
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={
+            "chat_id": chat_id,
+            "photo": photo_url
+        })
+
+        databases.update_document(
+            database_id=DATABASE_ID,
+            collection_id=COLLECTION_ID,
+            document_id=str(chat_id),
+            data={"photo_index": index + 1}
+        )
+    except Exception as e:
+        print(f"[send_photo] Errore invio foto: {e}")
+
+def send_view_photo_button(chat_id, photo_index):
+    photo_url = f"https://drive.google.com/uc?id={PHOTO_IDS[photo_index - 1]}"
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "📸 Guarda la foto", "url": photo_url}]
+        ]
+    }
+    payload = {
+        "chat_id": chat_id,
+        "text": "Ecco la tua foto! Vuoi vederne un'altra?",
+        "reply_markup": json.dumps(keyboard)
+    }
+    try:
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
+    except Exception as e:
+        print(f"[send_view_photo_button] Errore: {e}")
 
 async def main(context):
     req = context.req
