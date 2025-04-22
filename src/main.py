@@ -1,3 +1,4 @@
+import requests
 async def main(context):
     req = context.req
     res = context.res
