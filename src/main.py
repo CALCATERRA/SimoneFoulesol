@@ -1,9 +1,10 @@
 import json
 import os
-import requests
+import asyncio
+import httpx
 from appwrite.client import Client
 from appwrite.services.databases import Databases
-from appwrite.id import ID  # <-- AGGIUNTO
+from appwrite.id import ID
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -29,8 +30,8 @@ def init_appwrite_client():
     client.set_key(APPWRITE_API_KEY)
     return Databases(client)
 
-def create_payment_link(chat_id, amount):
-    token = get_paypal_token()
+async def create_payment_link(chat_id, amount):
+    token = await get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
     headers = {
         "Content-Type": "application/json",
@@ -47,25 +48,27 @@ def create_payment_link(chat_id, amount):
             "cancel_url": "https://t.me/FoulesolExclusive_bot"
         }
     }
-    res = requests.post(url, headers=headers, json=data)
-    res.raise_for_status()
-    return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
+    async with httpx.AsyncClient() as client:
+        res = await client.post(url, headers=headers, json=data)
+        res.raise_for_status()
+        return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
-def get_paypal_token():
+async def get_paypal_token():
     url = "https://api.sandbox.paypal.com/v1/oauth2/token"
     headers = {
         "Accept": "application/json",
         "Accept-Language": "en_US"
     }
     data = {"grant_type": "client_credentials"}
-    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    res.raise_for_status()
-    return res.json()['access_token']
+    async with httpx.AsyncClient() as client:
+        res = await client.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
+        res.raise_for_status()
+        return res.json()['access_token']
 
-def send_payment_link(chat_id, databases):
+async def send_payment_link(chat_id, databases):
     if not chat_id:
         return
-    payment_link = create_payment_link(chat_id, 0.99)
+    payment_link = await create_payment_link(chat_id, 0.99)
 
     try:
         user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
@@ -91,10 +94,10 @@ def send_payment_link(chat_id, databases):
         "text": "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!",
         "reply_markup": json.dumps(keyboard)
     }
-    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
+    async with httpx.AsyncClient() as client:
+        await client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
 
-def send_view_photo_button(chat_id, photo_number):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+async def send_view_photo_button(chat_id, photo_number):
     keyboard = {
         "inline_keyboard": [
             [{"text": f"📸 Guarda foto {photo_number}", "callback_data": "photo"}]
@@ -105,9 +108,10 @@ def send_view_photo_button(chat_id, photo_number):
         "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 👇",
         "reply_markup": json.dumps(keyboard)
     }
-    requests.post(url, data=payload)
+    async with httpx.AsyncClient() as client:
+        await client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
 
-def send_photo(chat_id, databases):
+async def send_photo(chat_id, databases):
     try:
         user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
         documents = user_data.get("documents", [])
@@ -115,29 +119,31 @@ def send_photo(chat_id, databases):
             return
         document = documents[0]
         document_id = document["$id"]
-    except Exception as e:
+    except Exception:
         return
 
     photo_index = document.get("photo_index", 0)
 
     if photo_index >= len(PHOTO_IDS):
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
-            "chat_id": chat_id,
-            "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
-        })
+        async with httpx.AsyncClient() as client:
+            await client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+                "chat_id": chat_id,
+                "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
+            })
         return
 
     photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[photo_index]}"
-    requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
-        data={"chat_id": chat_id, "photo": photo_url}
-    )
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
+            data={"chat_id": chat_id, "photo": photo_url}
+        )
 
     document["photo_index"] = photo_index + 1
     databases.update_document(DATABASE_ID, COLLECTION_ID, document_id, document)
 
     if photo_index + 1 < len(PHOTO_IDS):
-        send_payment_link(chat_id, databases)
+        await send_payment_link(chat_id, databases)
 
 async def main(context):
     req = context.req
@@ -159,7 +165,7 @@ async def main(context):
                 if not documents:
                     return res.json({"status": "user not found"}, 404)
                 photo_index = documents[0].get("photo_index", 0)
-                send_view_photo_button(chat_id, photo_index + 1)
+                await send_view_photo_button(chat_id, photo_index + 1)
                 return res.json({"status": "manual-return ok"}, 200)
             except Exception as e:
                 return res.json({"status": "manual-return error", "message": str(e)}, 500)
@@ -173,20 +179,21 @@ async def main(context):
         chat_id = str(message.get("chat", {}).get("id"))
         text = message.get("text", "")
         if chat_id and text == "/start":
-            send_payment_link(chat_id, databases)
+            await send_payment_link(chat_id, databases)
 
     elif callback:
         chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
         callback_id = callback.get("id")
         callback_data = callback.get("data", "")
 
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
-            data={"callback_query_id": callback_id}
-        )
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
+                data={"callback_query_id": callback_id}
+            )
 
         if chat_id and callback_data == "photo":
-            send_photo(chat_id, databases)
+            await send_photo(chat_id, databases)
             return res.json({"status": "photo sent"}, 200)
 
     return res.json({"status": "ok"}, 200)
