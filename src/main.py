@@ -3,6 +3,7 @@ import os
 import requests
 from appwrite.client import Client
 from appwrite.services.databases import Databases
+from appwrite.id import ID  # <-- AGGIUNTO
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -67,13 +68,18 @@ def send_payment_link(chat_id, databases):
     payment_link = create_payment_link(chat_id, 0.99)
 
     try:
-        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-    except:
-        user_data = None
+        user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
+        found = len(user_data.get("documents", [])) > 0
+    except Exception:
+        found = False
 
-    if not user_data:
-        databases.create_document(DATABASE_ID, COLLECTION_ID, chat_id, {"photo_index": 0})
-    # Non serve più settare payment_pending
+    if not found:
+        databases.create_document(
+            DATABASE_ID,
+            COLLECTION_ID,
+            ID.unique(),
+            {"chat_id": chat_id, "photo_index": 0}
+        )
 
     keyboard = {
         "inline_keyboard": [
@@ -103,11 +109,16 @@ def send_view_photo_button(chat_id, photo_number):
 
 def send_photo(chat_id, databases):
     try:
-        user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
+        user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
+        documents = user_data.get("documents", [])
+        if not documents:
+            return
+        document = documents[0]
+        document_id = document["$id"]
     except Exception as e:
         return
 
-    photo_index = user_data.get("photo_index", 0)
+    photo_index = document.get("photo_index", 0)
 
     if photo_index >= len(PHOTO_IDS):
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
@@ -122,10 +133,9 @@ def send_photo(chat_id, databases):
         data={"chat_id": chat_id, "photo": photo_url}
     )
 
-    user_data["photo_index"] = photo_index + 1
-    databases.update_document(DATABASE_ID, COLLECTION_ID, chat_id, user_data)
+    document["photo_index"] = photo_index + 1
+    databases.update_document(DATABASE_ID, COLLECTION_ID, document_id, document)
 
-    # Invia il pulsante per la prossima donazione solo se ci sono ancora foto
     if photo_index + 1 < len(PHOTO_IDS):
         send_payment_link(chat_id, databases)
 
@@ -144,8 +154,11 @@ async def main(context):
         chat_id = str(data.get("chat_id"))
         if chat_id:
             try:
-                user_data = databases.get_document(DATABASE_ID, COLLECTION_ID, chat_id)
-                photo_index = user_data.get("photo_index", 0)
+                user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
+                documents = user_data.get("documents", [])
+                if not documents:
+                    return res.json({"status": "user not found"}, 404)
+                photo_index = documents[0].get("photo_index", 0)
                 send_view_photo_button(chat_id, photo_index + 1)
                 return res.json({"status": "manual-return ok"}, 200)
             except Exception as e:
@@ -167,7 +180,6 @@ async def main(context):
         callback_id = callback.get("id")
         callback_data = callback.get("data", "")
 
-        # Risponde per evitare spinner
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
             data={"callback_query_id": callback_id}
