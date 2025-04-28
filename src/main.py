@@ -159,16 +159,8 @@ async def main(context):
     if data.get("source") == "manual-return":
         chat_id = str(data.get("chat_id"))
         if chat_id:
-            try:
-                user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
-                documents = user_data.get("documents", [])
-                if not documents:
-                    return res.json({"status": "user not found"}, 404)
-                photo_index = documents[0].get("photo_index", 0)
-                await send_view_photo_button(chat_id, photo_index + 1)
-                return res.json({"status": "manual-return ok"}, 200)
-            except Exception as e:
-                return res.json({"status": "manual-return error", "message": str(e)}, 500)
+            asyncio.create_task(handle_manual_return(chat_id, databases))
+            return res.json({"status": "manual-return started"}, 200)
         else:
             return res.json({"status": "missing chat_id"}, 400)
 
@@ -179,21 +171,33 @@ async def main(context):
         chat_id = str(message.get("chat", {}).get("id"))
         text = message.get("text", "")
         if chat_id and text == "/start":
-            await send_payment_link(chat_id, databases)
+            asyncio.create_task(send_payment_link(chat_id, databases))
 
     elif callback:
         chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
         callback_id = callback.get("id")
         callback_data = callback.get("data", "")
 
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
-                data={"callback_query_id": callback_id}
-            )
-
-        if chat_id and callback_data == "photo":
-            await send_photo(chat_id, databases)
-            return res.json({"status": "photo sent"}, 200)
+        asyncio.create_task(handle_callback(chat_id, callback_id, callback_data, databases))
 
     return res.json({"status": "ok"}, 200)
+
+async def handle_manual_return(chat_id, databases):
+    try:
+        user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
+        documents = user_data.get("documents", [])
+        if documents:
+            photo_index = documents[0].get("photo_index", 0)
+            await send_view_photo_button(chat_id, photo_index + 1)
+    except Exception:
+        pass
+
+async def handle_callback(chat_id, callback_id, callback_data, databases):
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
+            data={"callback_query_id": callback_id}
+        )
+
+    if chat_id and callback_data == "photo":
+        await send_photo(chat_id, databases)
