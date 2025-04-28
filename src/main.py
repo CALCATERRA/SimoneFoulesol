@@ -30,6 +30,18 @@ def init_appwrite_client():
     client.set_key(APPWRITE_API_KEY)
     return Databases(client)
 
+async def get_paypal_token():
+    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
+    headers = {
+        "Accept": "application/json",
+        "Accept-Language": "en_US"
+    }
+    data = {"grant_type": "client_credentials"}
+    async with httpx.AsyncClient() as client:
+        res = await client.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
+        res.raise_for_status()
+        return res.json()['access_token']
+
 async def create_payment_link(chat_id, amount):
     token = await get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
@@ -53,19 +65,7 @@ async def create_payment_link(chat_id, amount):
         res.raise_for_status()
         return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
 
-async def get_paypal_token():
-    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
-    headers = {
-        "Accept": "application/json",
-        "Accept-Language": "en_US"
-    }
-    data = {"grant_type": "client_credentials"}
-    async with httpx.AsyncClient() as client:
-        res = await client.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-        res.raise_for_status()
-        return res.json()['access_token']
-
-async def send_initial_message(chat_id):
+async def send_wait_message(chat_id):
     payload = {
         "chat_id": chat_id,
         "text": "⏳ Creazione del pagamento in corso, attendi qualche secondo..."
@@ -73,10 +73,22 @@ async def send_initial_message(chat_id):
     async with httpx.AsyncClient() as client:
         await client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
 
-async def send_payment_link(chat_id, databases):
-    if not chat_id:
-        return
+async def send_payment_link(chat_id, payment_link):
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "💳 Paga 0,99€ per la prossima foto", "url": payment_link}]
+        ]
+    }
+    payload = {
+        "chat_id": chat_id,
+        "text": "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!",
+        "reply_markup": json.dumps(keyboard)
+    }
+    async with httpx.AsyncClient() as client:
+        await client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
 
+async def start_payment_flow(chat_id):
+    databases = init_appwrite_client()
     try:
         user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
         found = len(user_data.get("documents", [])) > 0
@@ -92,19 +104,7 @@ async def send_payment_link(chat_id, databases):
         )
 
     payment_link = await create_payment_link(chat_id, 0.99)
-
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "💳 Paga 0,99€ per la prossima foto", "url": payment_link}]
-        ]
-    }
-    payload = {
-        "chat_id": chat_id,
-        "text": "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!",
-        "reply_markup": json.dumps(keyboard)
-    }
-    async with httpx.AsyncClient() as client:
-        await client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
+    await send_payment_link(chat_id, payment_link)
 
 async def send_view_photo_button(chat_id, photo_number):
     keyboard = {
@@ -120,7 +120,8 @@ async def send_view_photo_button(chat_id, photo_number):
     async with httpx.AsyncClient() as client:
         await client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=payload)
 
-async def send_photo(chat_id, databases):
+async def send_photo(chat_id):
+    databases = init_appwrite_client()
     try:
         user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
         documents = user_data.get("documents", [])
@@ -152,34 +153,17 @@ async def send_photo(chat_id, databases):
     databases.update_document(DATABASE_ID, COLLECTION_ID, document_id, document)
 
     if photo_index + 1 < len(PHOTO_IDS):
-        await send_payment_link(chat_id, databases)
+        payment_link = await create_payment_link(chat_id, 0.99)
+        await send_payment_link(chat_id, payment_link)
 
 async def main(context):
     req = context.req
     res = context.res
 
-    databases = init_appwrite_client()
-
     try:
         data = req.body if isinstance(req.body, dict) else json.loads(req.body)
     except Exception:
         return res.json({"status": "invalid json"}, 400)
-
-    if data.get("source") == "manual-return":
-        chat_id = str(data.get("chat_id"))
-        if chat_id:
-            try:
-                user_data = databases.list_documents(DATABASE_ID, COLLECTION_ID, f'chat_id="{chat_id}"')
-                documents = user_data.get("documents", [])
-                if not documents:
-                    return res.json({"status": "user not found"}, 404)
-                photo_index = documents[0].get("photo_index", 0)
-                await send_view_photo_button(chat_id, photo_index + 1)
-                return res.json({"status": "manual-return ok"}, 200)
-            except Exception as e:
-                return res.json({"status": "manual-return error", "message": str(e)}, 500)
-        else:
-            return res.json({"status": "missing chat_id"}, 400)
 
     message = data.get("message")
     callback = data.get("callback_query")
@@ -188,8 +172,8 @@ async def main(context):
         chat_id = str(message.get("chat", {}).get("id"))
         text = message.get("text", "")
         if chat_id and text == "/start":
-            await send_initial_message(chat_id)
-            asyncio.create_task(send_payment_link(chat_id, databases))
+            await send_wait_message(chat_id)
+            asyncio.create_task(start_payment_flow(chat_id))
 
     elif callback:
         chat_id = str(callback.get("message", {}).get("chat", {}).get("id"))
@@ -203,7 +187,6 @@ async def main(context):
             )
 
         if chat_id and callback_data == "photo":
-            await send_photo(chat_id, databases)
-            return res.json({"status": "photo sent"}, 200)
+            asyncio.create_task(send_photo(chat_id))
 
     return res.json({"status": "ok"}, 200)
