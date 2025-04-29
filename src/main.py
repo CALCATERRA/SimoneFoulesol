@@ -66,27 +66,34 @@ def create_payment_link(chat_id: str, step: int):
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}"
     }
-    return_url = f"{NETLIFY_BASE_URL}/?chat_id={chat_id}&step={step}"
-    cancel_url = f"https://t.me/{BOT_USERNAME}"
     data = {
         "intent": "CAPTURE",
-        "purchase_units": [{
-            "amount": {
-                "currency_code": "EUR",
-                "value": PREZZO_EURO
-            },
-            "custom_id": f"{chat_id}:{step}"
-        }],
+        "purchase_units": [
+            {
+                "amount": {
+                    "currency_code": "EUR",
+                    "value": PREZZO_EURO
+                },
+                "custom_id": f"{chat_id}:{step}"
+            }
+        ],
         "application_context": {
-            "return_url": return_url,
-            "cancel_url": cancel_url
+            "return_url": f"{NETLIFY_BASE_URL}/?chat_id={chat_id}",
+            "cancel_url": f"https://t.me/{BOT_USERNAME}"
         }
     }
-    res = requests.post(url, headers=headers, json=data)
-    res.raise_for_status()
-    links = res.json()["links"]
-    return next(link["href"] for link in links if link["rel"] == "approve")
 
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    response.raise_for_status()
+    order = response.json()
+    
+    # Recupera il link di approvazione
+    for link in order["links"]:
+        if link["rel"] == "approve":
+            return link["href"]
+    
+    raise Exception("Link di approvazione PayPal non trovato")
+    
 def send_photo_and_next_payment(chat_id: str, step: int):
     if step < len(PHOTO_IDS):
         photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[step]}"
