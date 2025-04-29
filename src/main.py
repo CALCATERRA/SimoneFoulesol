@@ -5,7 +5,7 @@ import requests
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BOT_USERNAME = "FoulesolExclusive_bot"
-PREZZO_EURO = "0.99"
+PREZZO_EURO = "1.99"
 NETLIFY_BASE_URL = "https://comfy-mermaid-9cebbf.netlify.app"
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
@@ -118,7 +118,7 @@ def send_photo_and_next_payment(chat_id: str, step: int):
 def send_view_button(chat_id: str, step: int):
     keyboard = {
         "inline_keyboard": [[{
-            "text": f"📸 Guarda foto {step}",
+            "text": f"📸 Guarda foto {step + 1}",
             "callback_data": f"{step}b"
         }]]
     }
