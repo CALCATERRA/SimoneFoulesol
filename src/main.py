@@ -4,8 +4,6 @@ import requests
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
-PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
 # Lista dei 100 ID di Google Drive
 PHOTO_IDS = [
@@ -13,135 +11,92 @@ PHOTO_IDS = [
     "135lkGQNvf_T4CwtRH-Pu2sG7n30iV1Cu"  # ...continua fino a 100...
 ]
 
-# Stato utenti
-user_payments = {}
+def send_photo_and_next_payment(chat_id: str, step: int):
+    if step < len(PHOTO_IDS):
+        # Manda foto step (0-based)
+        photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[step]}"
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={
+            "chat_id": chat_id,
+            "photo": photo_url
+        })
 
-def get_paypal_token():
-    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
-    headers = {"Accept": "application/json", "Accept-Language": "en_US"}
-    data = {"grant_type": "client_credentials"}
-    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    res.raise_for_status()
-    return res.json()['access_token']
+        # Manda pulsante (step+1)a se esiste
+        if step + 1 < len(PHOTO_IDS):
+            next_step = step + 1
+            payment_link = f"https://paypal.me/SimonFoulesol?country.x=IT&locale.x=it_IT"
+            keyboard = {
+                "inline_keyboard": [[{
+                    "text": f"💳 Paga 0,99€ per la foto {next_step + 1}",
+                    "url": payment_link
+                }]]
+            }
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+                "chat_id": chat_id,
+                "text": f"Per ricevere la prossima foto {next_step + 1}, effettua il pagamento👇",
+                "reply_markup": json.dumps(keyboard)
+            })
+        else:
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+                "chat_id": chat_id,
+                "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
+            })
 
-def create_payment_link(chat_id, amount):
-    token = get_paypal_token()
-    url = "https://api.sandbox.paypal.com/v2/checkout/orders"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
-    data = {
-        "intent": "CAPTURE",
-        "purchase_units": [{
-            "amount": {"currency_code": "EUR", "value": str(amount)},
-            "custom_id": str(chat_id)
-        }],
-        "application_context": {
-            "return_url": f"https://comfy-mermaid-9cebbf.netlify.app/?chat_id={chat_id}",
-            "cancel_url": "https://t.me/FoulesolExclusive_bot"
-        }
-    }
-    res = requests.post(url, headers=headers, json=data)
-    res.raise_for_status()
-    return next(link['href'] for link in res.json()['links'] if link['rel'] == 'approve')
-
-def send_payment_link(chat_id):
-    payment_link = create_payment_link(chat_id, 0.99)
-    user_payments[chat_id] = {
-        'payment_pending': True,
-        'photo_index': user_payments.get(chat_id, {}).get('photo_index', 0)
-    }
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+def send_view_button(chat_id: str, step: int):
     keyboard = {
-        "inline_keyboard": [
-            [{"text": "💳 Paga 0,99€ per la prossima foto", "url": payment_link}]
-        ]
+        "inline_keyboard": [[{
+            "text": f"📸 Guarda foto {step}",
+            "callback_data": f"{step}b"
+        }]]
     }
-    payload = {
-        "chat_id": chat_id,
-        "text": "☕ Offrimi un caffè su PayPal e ricevi la prossima foto esclusiva. Dopo il pagamento, torna qui!",
-        "reply_markup": json.dumps(keyboard)
-    }
-    requests.post(url, data=payload)
-
-def send_view_photo_button(chat_id):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "📸 Guarda foto", "callback_data": "photo"}]
-        ]
-    }
-    payload = {
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
         "chat_id": chat_id,
         "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 👇",
         "reply_markup": json.dumps(keyboard)
-    }
-    requests.post(url, data=payload)
-
-def send_photo(chat_id):
-    user_state = user_payments.get(chat_id, {})
-    index = user_state.get('photo_index', 0)
-
-    if index < len(PHOTO_IDS):
-        photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[index]}"
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-        payload = {"chat_id": chat_id, "photo": photo_url}
-        requests.post(url, data=payload)
-
-        # Incrementa per la prossima volta
-        user_payments[chat_id]['photo_index'] = index + 1
-        user_payments[chat_id]['payment_pending'] = None
-
-        # Invia nuovo pulsante PayPal per la prossima foto (se ci sono ancora foto)
-        if index + 1 < len(PHOTO_IDS):
-            send_payment_link(chat_id)
-        else:
-            # Fine sequenza
-            final_msg = {
-                "chat_id": chat_id,
-                "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
-            }
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data=final_msg)
-
-    else:
-        print(f"✅ Tutte le foto già inviate a chat_id={chat_id}")
+    })
 
 async def main(context):
     req = context.req
     res = context.res
 
     try:
-        content_type = req.headers.get("content-type", "")
-        raw_body = req.body_raw if isinstance(req.body_raw, str) else req.body_raw.decode()
+        body = req.body if isinstance(req.body, dict) else json.loads(req.body)
 
-        try:
-            data = req.body if isinstance(req.body, dict) else json.loads(req.body)
-        except Exception as e:
-            print("❗ JSON parsing error:", str(e))
-            return res.json({"status": "invalid json"}, 400)
+        # ➤ Richiamo manuale da index.html
+        if body.get("source") == "manual-return" and body.get("chat_id") and body.get("step") is not None:
+            chat_id = str(body["chat_id"])
+            step = int(body["step"])
+            send_view_button(chat_id, step)
+            return res.json({"status": f"manual-return ok step {step}"}, 200)
 
-        # Richiamo da index.html (dopo pagamento PayPal)
-        if data.get("source") == "manual-return" and data.get("chat_id"):
-            chat_id = str(data["chat_id"])
-            current_index = user_payments.get(chat_id, {}).get('photo_index', 0)
-            user_payments[chat_id] = {
-                'payment_pending': False,
-                'photo_index': current_index
-            }
-            send_view_photo_button(chat_id)
-            return res.json({"status": "manual-return ok"}, 200)
-
-        # Gestione comandi Telegram
-        message = data.get("message")
-        callback = data.get("callback_query")
-
-        if message:
-            chat_id = str(message["chat"]["id"])
-            if message.get("text") == "/start":
-                send_payment_link(chat_id)
-
-        elif callback:
+        # ➤ Callback Telegram
+        if "callback_query" in body:
+            callback = body["callback_query"]
             chat_id = str(callback["message"]["chat"]["id"])
-            if callback.get("data") == "photo":
-                send_photo(chat_id)
+            data = callback.get("data", "")
+
+            if data.endswith("b"):
+                step_str = data[:-1]
+                if step_str.isdigit():
+                    step = int(step_str)
+                    send_photo_and_next_payment(chat_id, step)
+                    return res.json({"status": f"photo {step} ok"}, 200)
+
+        # ➤ Comando /start
+        if "message" in body:
+            msg = body["message"]
+            chat_id = str(msg["chat"]["id"])
+            if msg.get("text") == "/start":
+                keyboard = {
+                    "inline_keyboard": [[{
+                        "text": "💳 Paga 0,99€ per la foto 1",
+                        "url": "https://paypal.me/SimonFoulesol?country.x=IT&locale.x=it_IT"
+                    }]]
+                }
+                requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+                    "chat_id": chat_id,
+                    "text": "Benvenuto! Premi per acquistare la prima foto esclusiva:",
+                    "reply_markup": json.dumps(keyboard)
+                })
 
         return res.json({"status": "ok"}, 200)
 
