@@ -52,7 +52,7 @@ PHOTO_IDS = [
 ]
 
 def get_paypal_token():
-    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
+    url = "https://api.paypal.com/v1/oauth2/token"
     headers = {"Accept": "application/json", "Accept-Language": "en_US"}
     data = {"grant_type": "client_credentials"}
     res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
@@ -61,7 +61,7 @@ def get_paypal_token():
 
 def create_payment_link(chat_id: str, step: int):
     token = get_paypal_token()
-    url = "https://api.sandbox.paypal.com/v2/checkout/orders"
+    url = "https://api.paypal.com/v2/checkout/orders"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}"
