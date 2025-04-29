@@ -5,15 +5,51 @@ import requests
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BOT_USERNAME = "FoulesolExclusive_bot"
-PAYPAL_EMAIL = "simone.ca.gioco@gmail.com"
 PREZZO_EURO = "0.99"
 NETLIFY_BASE_URL = "https://comfy-mermaid-9cebbf.netlify.app"
+PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
+PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
-# Lista dei 100 ID di Google Drive
 PHOTO_IDS = [
     "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG", "11uKOYNTCu1bDoetyKfPtRLMTqsYPKKEc", "13--pJBJ1uyyO36ChfraQ2aVQfKecWtfr",
     "135lkGQNvf_T4CwtRH-Pu2sG7n30iV1Cu"  # ...continua fino a 100...
 ]
+
+def get_paypal_token():
+    url = "https://api.sandbox.paypal.com/v1/oauth2/token"
+    headers = {"Accept": "application/json", "Accept-Language": "en_US"}
+    data = {"grant_type": "client_credentials"}
+    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
+    res.raise_for_status()
+    return res.json()["access_token"]
+
+def create_payment_link(chat_id: str, step: int):
+    token = get_paypal_token()
+    url = "https://api.sandbox.paypal.com/v2/checkout/orders"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    return_url = f"{NETLIFY_BASE_URL}/?chat_id={chat_id}&step={step}"
+    cancel_url = f"https://t.me/{BOT_USERNAME}"
+    data = {
+        "intent": "CAPTURE",
+        "purchase_units": [{
+            "amount": {
+                "currency_code": "EUR",
+                "value": PREZZO_EURO
+            },
+            "custom_id": f"{chat_id}:{step}"
+        }],
+        "application_context": {
+            "return_url": return_url,
+            "cancel_url": cancel_url
+        }
+    }
+    res = requests.post(url, headers=headers, json=data)
+    res.raise_for_status()
+    links = res.json()["links"]
+    return next(link["href"] for link in links if link["rel"] == "approve")
 
 def send_photo_and_next_payment(chat_id: str, step: int):
     if step < len(PHOTO_IDS):
@@ -25,25 +61,13 @@ def send_photo_and_next_payment(chat_id: str, step: int):
 
         if step + 1 < len(PHOTO_IDS):
             next_step = step + 1
-            return_url = f"{NETLIFY_BASE_URL}/?chat_id={chat_id}&step={next_step}"
-            cancel_url = f"https://t.me/{BOT_USERNAME}"
-            payment_link = (
-                f"https://www.paypal.com/cgi-bin/webscr?"
-                f"cmd=_xclick&business={PAYPAL_EMAIL}"
-                f"&item_name=Foto%20{next_step + 1}"
-                f"&amount={PREZZO_EURO}&currency_code=EUR"
-                f"&return={return_url}"
-                f"&cancel_return={cancel_url}"
-                f"&custom={chat_id}:{next_step}"  # usato solo per tracciamento, opzionale
-            )
-
+            payment_link = create_payment_link(chat_id, next_step)
             keyboard = {
                 "inline_keyboard": [[{
                     "text": f"💳 Paga {PREZZO_EURO}€ per la foto {next_step + 1}",
                     "url": payment_link
                 }]]
             }
-
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                 "chat_id": chat_id,
                 "text": f"Per ricevere la prossima foto {next_step + 1}, effettua il pagamento👇",
@@ -101,25 +125,13 @@ async def main(context):
             chat_id = str(msg["chat"]["id"])
             if msg.get("text") == "/start":
                 step = 0
-                return_url = f"{NETLIFY_BASE_URL}/?chat_id={chat_id}&step={step}"
-                cancel_url = f"https://t.me/{BOT_USERNAME}"
-                payment_link = (
-                    f"https://www.paypal.com/cgi-bin/webscr?"
-                    f"cmd=_xclick&business={PAYPAL_EMAIL}"
-                    f"&item_name=Foto%201"
-                    f"&amount={PREZZO_EURO}&currency_code=EUR"
-                    f"&return={return_url}"
-                    f"&cancel_return={cancel_url}"
-                    f"&custom={chat_id}:{step}"
-                )
-
+                payment_link = create_payment_link(chat_id, step)
                 keyboard = {
                     "inline_keyboard": [[{
                         "text": "💳 Paga 0,99€ per la foto 1",
                         "url": payment_link
                     }]]
                 }
-
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                     "chat_id": chat_id,
                     "text": "Benvenuto! Premi per acquistare la prima foto esclusiva:",
