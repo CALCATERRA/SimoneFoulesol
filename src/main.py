@@ -106,7 +106,7 @@ def send_photo_and_next_payment(chat_id: str, step: int):
             }
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                 "chat_id": chat_id,
-                "text": f"Per ricevere la prossima foto {next_step + 1}, effettua il pagamento👇",
+                "text": f"Spero ri piaccia 😏, per ricevere la foto {next_step + 1}, ti chiedo un altro piccolo contributo 👇",
                 "reply_markup": json.dumps(keyboard)
             })
         else:
@@ -124,7 +124,7 @@ def send_view_button(chat_id: str, step: int):
     }
     requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
         "chat_id": chat_id,
-        "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 👇",
+        "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 😏 👇",
         "reply_markup": json.dumps(keyboard)
     })
 
@@ -164,13 +164,13 @@ async def main(context):
                 payment_link = create_payment_link(chat_id, step)
                 keyboard = {
                     "inline_keyboard": [[{
-                        "text": "💳 Paga 0,99€ per la foto 1",
+                        "text": "💳 Paga 1,99€ per la foto 1",
                         "url": payment_link
                     }]]
                 }
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                     "chat_id": chat_id,
-                    "text": "Benvenuto! Premi per acquistare la prima foto esclusiva:",
+                    "text": "Benvenuto 😘 Premi qui sotto per acquistare e ricevere la prima foto esclusiva 👇:",
                     "reply_markup": json.dumps(keyboard)
                 })
 
