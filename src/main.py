@@ -106,7 +106,7 @@ def send_photo_and_next_payment(chat_id: str, step: int):
             }
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                 "chat_id": chat_id,
-                "text": f"Spero ri piaccia 😏, per ricevere la foto {next_step + 1}, ti chiedo un altro piccolo contributo 👇",
+                "text": f"Spero ri piaccia 😏, per ricevere la foto {next_step + 1}, ti chiedo un altro piccolo contributo 😘 👇",
                 "reply_markup": json.dumps(keyboard)
             })
         else:
