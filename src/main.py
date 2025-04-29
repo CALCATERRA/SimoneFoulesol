@@ -4,6 +4,10 @@ import requests
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+BOT_USERNAME = "FoulesolExclusive_bot"
+PAYPAL_EMAIL = "simone.ca.gioco@gmail.com"
+PREZZO_EURO = "0.99"
+NETLIFY_BASE_URL = "https://comfy-mermaid-9cebbf.netlify.app"
 
 # Lista dei 100 ID di Google Drive
 PHOTO_IDS = [
@@ -13,23 +17,33 @@ PHOTO_IDS = [
 
 def send_photo_and_next_payment(chat_id: str, step: int):
     if step < len(PHOTO_IDS):
-        # Manda foto step (0-based)
         photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[step]}"
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={
             "chat_id": chat_id,
             "photo": photo_url
         })
 
-        # Manda pulsante (step+1)a se esiste
         if step + 1 < len(PHOTO_IDS):
             next_step = step + 1
-            payment_link = f"https://paypal.me/SimonFoulesol?country.x=IT&locale.x=it_IT"
+            return_url = f"{NETLIFY_BASE_URL}/?chat_id={chat_id}&step={next_step}"
+            cancel_url = f"https://t.me/{BOT_USERNAME}"
+            payment_link = (
+                f"https://www.paypal.com/cgi-bin/webscr?"
+                f"cmd=_xclick&business={PAYPAL_EMAIL}"
+                f"&item_name=Foto%20{next_step + 1}"
+                f"&amount={PREZZO_EURO}&currency_code=EUR"
+                f"&return={return_url}"
+                f"&cancel_return={cancel_url}"
+                f"&custom={chat_id}:{next_step}"  # usato solo per tracciamento, opzionale
+            )
+
             keyboard = {
                 "inline_keyboard": [[{
-                    "text": f"💳 Paga 0,99€ per la foto {next_step + 1}",
+                    "text": f"💳 Paga {PREZZO_EURO}€ per la foto {next_step + 1}",
                     "url": payment_link
                 }]]
             }
+
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                 "chat_id": chat_id,
                 "text": f"Per ricevere la prossima foto {next_step + 1}, effettua il pagamento👇",
@@ -61,14 +75,14 @@ async def main(context):
     try:
         body = req.body if isinstance(req.body, dict) else json.loads(req.body)
 
-        # ➤ Richiamo manuale da index.html
+        # ➤ Richiamo manuale da Netlify (dopo pagamento PayPal)
         if body.get("source") == "manual-return" and body.get("chat_id") and body.get("step") is not None:
             chat_id = str(body["chat_id"])
             step = int(body["step"])
             send_view_button(chat_id, step)
             return res.json({"status": f"manual-return ok step {step}"}, 200)
 
-        # ➤ Callback Telegram
+        # ➤ Callback Telegram (bottone "Guarda foto")
         if "callback_query" in body:
             callback = body["callback_query"]
             chat_id = str(callback["message"]["chat"]["id"])
@@ -86,12 +100,26 @@ async def main(context):
             msg = body["message"]
             chat_id = str(msg["chat"]["id"])
             if msg.get("text") == "/start":
+                step = 0
+                return_url = f"{NETLIFY_BASE_URL}/?chat_id={chat_id}&step={step}"
+                cancel_url = f"https://t.me/{BOT_USERNAME}"
+                payment_link = (
+                    f"https://www.paypal.com/cgi-bin/webscr?"
+                    f"cmd=_xclick&business={PAYPAL_EMAIL}"
+                    f"&item_name=Foto%201"
+                    f"&amount={PREZZO_EURO}&currency_code=EUR"
+                    f"&return={return_url}"
+                    f"&cancel_return={cancel_url}"
+                    f"&custom={chat_id}:{step}"
+                )
+
                 keyboard = {
                     "inline_keyboard": [[{
                         "text": "💳 Paga 0,99€ per la foto 1",
-                        "url": "https://paypal.me/SimonFoulesol?country.x=IT&locale.x=it_IT"
+                        "url": payment_link
                     }]]
                 }
+
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                     "chat_id": chat_id,
                     "text": "Benvenuto! Premi per acquistare la prima foto esclusiva:",
