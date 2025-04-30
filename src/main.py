@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+import traceback
 
 # Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -199,6 +200,7 @@ async def main(context):
 
         return res.json({"status": "ok"}, 200)
 
-    except Exception as e:
-        print("❗ Errore:", str(e))
-        return res.json({"status": "error", "message": str(e)}, 500)
+except Exception as e:
+    print("❗ Errore:", str(e))
+    traceback.print_exc()
+    return res.json({"status": "error", "message": str(e)}, 500)
