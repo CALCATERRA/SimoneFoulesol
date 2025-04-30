@@ -106,7 +106,7 @@ def send_photo_and_next_payment(chat_id: str, step: int):
             }
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                 "chat_id": chat_id,
-                "text": f"Spero ri piaccia 😏, per ricevere la foto {next_step + 1}, ti chiedo un altro piccolo contributo 😘 👇",
+                "text": f"Spero ti piaccia 😏, per ricevere la foto {next_step + 1}, ti chiedo un altro piccolo contributo 😘 👇",
                 "reply_markup": json.dumps(keyboard)
             })
         else:
@@ -141,6 +141,17 @@ async def main(context):
             step = int(body["step"])
             send_view_button(chat_id, step)
             return res.json({"status": f"manual-return ok step {step}"}, 200)
+
+        # ➤ Callback da PayPal: webhook CHECKOUT.ORDER.APPROVED
+        if body.get("event_type") == "CHECKOUT.ORDER.APPROVED":
+            try:
+                custom_id = body["resource"]["purchase_units"][0]["custom_id"]
+                chat_id, step_str = custom_id.split(":")
+                step = int(step_str)
+                send_view_button(chat_id, step)
+                return res.json({"status": f"paypal webhook ok step {step}"}, 200)
+            except Exception as parse_err:
+                return res.json({"status": "webhook parse error", "error": str(parse_err)}, 400)
 
         # ➤ Callback Telegram (bottone "Guarda foto")
         if "callback_query" in body:
