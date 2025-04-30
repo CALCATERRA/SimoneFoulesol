@@ -59,6 +59,17 @@ def get_paypal_token():
     res.raise_for_status()
     return res.json()["access_token"]
 
+def capture_order(order_id: str):
+    token = get_paypal_token()
+    url = f"https://api.sandbox.paypal.com/v2/checkout/orders/{order_id}/capture"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    res = requests.post(url, headers=headers)
+    res.raise_for_status()
+    return res.json()
+
 def create_payment_link(chat_id: str, step: int):
     token = get_paypal_token()
     url = "https://api.sandbox.paypal.com/v2/checkout/orders"
@@ -135,23 +146,24 @@ async def main(context):
     try:
         body = req.body if isinstance(req.body, dict) else json.loads(req.body)
 
-        # ➤ Richiamo manuale da Netlify (dopo pagamento PayPal)
+        # ➤ Richiamo manuale da Netlify (dopo pagamento)
         if body.get("source") == "manual-return" and body.get("chat_id") and body.get("step") is not None:
             chat_id = str(body["chat_id"])
             step = int(body["step"])
             send_view_button(chat_id, step)
             return res.json({"status": f"manual-return ok step {step}"}, 200)
 
-        # ➤ Callback da PayPal: webhook CHECKOUT.ORDER.APPROVED
+        # ➤ Webhook da PayPal
         if body.get("event_type") == "CHECKOUT.ORDER.APPROVED":
-            try:
-                custom_id = body["resource"]["purchase_units"][0]["custom_id"]
-                chat_id, step_str = custom_id.split(":")
-                step = int(step_str)
+            order_id = body["resource"]["id"]
+            pu = body["resource"]["purchase_units"][0]
+            custom_id = pu.get("custom_id", "")
+            if ":" in custom_id:
+                chat_id, step = custom_id.split(":")
+                step = int(step)
+                capture_result = capture_order(order_id)
                 send_view_button(chat_id, step)
-                return res.json({"status": f"paypal webhook ok step {step}"}, 200)
-            except Exception as parse_err:
-                return res.json({"status": "webhook parse error", "error": str(parse_err)}, 400)
+                return res.json({"status": f"Captured order {order_id} and sent photo button"}, 200)
 
         # ➤ Callback Telegram (bottone "Guarda foto")
         if "callback_query" in body:
