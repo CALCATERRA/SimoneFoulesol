@@ -58,9 +58,11 @@ def get_paypal_token():
     data = {"grant_type": "client_credentials"}
     res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
     res.raise_for_status()
+    print("✅ PayPal token ottenuto.")
     return res.json()["access_token"]
 
 def capture_order(order_id: str):
+    print(f"➡️ Tentativo di capture per order_id: {order_id}")
     token = get_paypal_token()
     url = f"https://api.paypal.com/v2/checkout/orders/{order_id}/capture"
     headers = {
@@ -69,6 +71,7 @@ def capture_order(order_id: str):
     }
     res = requests.post(url, headers=headers)
     res.raise_for_status()
+    print(f"✅ Risposta capture: {res.json()}")
     return res.json()
 
 def create_payment_link(chat_id: str, step: int):
@@ -97,11 +100,13 @@ def create_payment_link(chat_id: str, step: int):
     res = requests.post(url, headers=headers, json=data)
     res.raise_for_status()
     links = res.json()["links"]
+    print(f"✅ Link pagamento creato per step {step}")
     return next(link["href"] for link in links if link["rel"] == "approve")
 
 def send_photo_and_next_payment(chat_id: str, step: int):
     if step < len(PHOTO_IDS):
         photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[step]}"
+        print(f"📸 Invio foto {step + 1} a chat_id={chat_id}")
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={
             "chat_id": chat_id,
             "photo": photo_url
@@ -116,18 +121,21 @@ def send_photo_and_next_payment(chat_id: str, step: int):
                     "url": payment_link
                 }]]
             }
+            print(f"💬 Invio bottone pagamento per foto {next_step + 1}")
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                 "chat_id": chat_id,
                 "text": f"Spero ti piaccia 😏, per ricevere la foto {next_step + 1}, ti chiedo un altro piccolo contributo 😘 👇",
                 "reply_markup": json.dumps(keyboard)
             })
         else:
+            print(f"🎉 Ultima foto inviata a chat_id={chat_id}")
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                 "chat_id": chat_id,
                 "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
             })
 
 def send_view_button(chat_id: str, step: int):
+    print(f"👁 Invio bottone 'Guarda foto' per step={step} a chat_id={chat_id}")
     keyboard = {
         "inline_keyboard": [[{
             "text": f"📸 Guarda foto {step + 1}",
@@ -146,11 +154,13 @@ async def main(context):
 
     try:
         body = req.body if isinstance(req.body, dict) else json.loads(req.body)
+        print("📥 Corpo ricevuto:", body)
 
-        # ➤ Richiamo manuale da Netlify (dopo pagamento)
+        # ➤ Richiamo manuale da Netlify
         if body.get("source") == "manual-return" and body.get("chat_id") and body.get("step") is not None:
             chat_id = str(body["chat_id"])
             step = int(body["step"])
+            print(f"🔄 Richiamo manuale per chat_id={chat_id}, step={step}")
             send_view_button(chat_id, step)
             return res.json({"status": f"manual-return ok step {step}"}, 200)
 
@@ -159,11 +169,13 @@ async def main(context):
             order_id = body["resource"]["id"]
             pu = body["resource"]["purchase_units"][0]
             custom_id = pu.get("custom_id", "")
+            print(f"🧾 Webhook APPROVED ricevuto per order_id={order_id}, custom_id={custom_id}")
             if ":" in custom_id:
                 chat_id, step = custom_id.split(":")
                 step = int(step)
                 capture_result = capture_order(order_id)
                 send_view_button(chat_id, step)
+                print(f"✅ Ordine {order_id} catturato e bottone inviato.")
                 return res.json({"status": f"Captured order {order_id} and sent photo button"}, 200)
 
         # ➤ Callback Telegram (bottone "Guarda foto")
@@ -171,12 +183,14 @@ async def main(context):
             callback = body["callback_query"]
             chat_id = str(callback["message"]["chat"]["id"])
             data = callback.get("data", "")
+            print(f"🔘 Callback ricevuto da chat_id={chat_id}, data={data}")
 
             if data.endswith("b"):
                 step_str = data[:-1]
                 if step_str.isdigit():
                     step = int(step_str)
                     send_photo_and_next_payment(chat_id, step)
+                    print(f"📸 Foto inviata per step {step}, pagamento successivo impostato.")
                     return res.json({"status": f"photo {step} ok"}, 200)
 
         # ➤ Comando /start
@@ -184,6 +198,7 @@ async def main(context):
             msg = body["message"]
             chat_id = str(msg["chat"]["id"])
             if msg.get("text") == "/start":
+                print(f"👋 /start ricevuto da chat_id={chat_id}")
                 step = 0
                 payment_link = create_payment_link(chat_id, step)
                 keyboard = {
