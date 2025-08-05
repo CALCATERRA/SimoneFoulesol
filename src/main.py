@@ -4,6 +4,7 @@ import requests
 import traceback
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+SECRET_TOKEN = os.environ.get("SECRET_TOKEN")  # nuovo token segreto per sicurezza
 
 PHOTO_IDS = [
     "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG",
@@ -17,7 +18,6 @@ PREZZI = [1.99 - i * 0.01 for i in range(len(PHOTO_IDS))]
 def create_payment_link(chat_id, step):
     prezzo = PREZZI[step]
     prezzo_str = f"{prezzo:.2f}"
-    # Passo anche amount per controllo importo preciso
     return f"https://comfy-mermaid-9cebbf.netlify.app/?chat_id={chat_id}&step={step}&amount={prezzo_str}"
 
 def send_photo(chat_id, step):
@@ -61,8 +61,14 @@ def main(context):
                 send_payment_button(chat_id, 0)
                 return res.json({"status": "ok"}, 200)
 
-        # Conferma pagamento da Netlify (notify.py)
+        # Conferma pagamento da notify.py
         if "chat_id" in body and "step" in body:
+            # Verifica token segreto
+            token = body.get("secret_token")
+            if token != SECRET_TOKEN:
+                print("❌ Token segreto mancante o errato. Ignoro la richiesta.")
+                return res.json({"status": "error", "message": "Unauthorized"}, 401)
+
             chat_id = body["chat_id"]
             step = int(body["step"])
             print(f"✅ Pagamento confermato. Invio foto {step + 1} a chat_id={chat_id}")
