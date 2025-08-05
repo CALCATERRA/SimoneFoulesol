@@ -3,13 +3,7 @@ import os
 import requests
 import traceback
 
-# Config
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-BOT_USERNAME = "FoulesolExclusive_bot"
-PREZZO_EURO = "1.99"
-NETLIFY_BASE_URL = "https://comfy-mermaid-9cebbf.netlify.app"
-PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
-PAYPAL_SECRET = os.environ.get("PAYPAL_SECRET")
 
 PHOTO_IDS = [
     "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG", "11uKOYNTCu1bDoetyKfPtRLMTqsYPKKEc", "13--pJBJ1uyyO36ChfraQ2aVQfKecWtfr",
@@ -49,101 +43,36 @@ PHOTO_IDS = [
 
 ]
 
-def get_paypal_token():
-    url = "https://api.paypal.com/v1/oauth2/token"
-    headers = {"Accept": "application/json", "Accept-Language": "en_US"}
-    data = {"grant_type": "client_credentials"}
-    res = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET))
-    res.raise_for_status()
-    print("✅ PayPal token ottenuto.")
-    return res.json()["access_token"]
+PREZZI = [1.99 - i * 0.01 for i in range(len(PHOTO_IDS))]
 
-def capture_order(order_id: str):
-    print(f"➡️ Tentativo di capture per order_id: {order_id}")
-    token = get_paypal_token()
-    url = f"https://api.paypal.com/v2/checkout/orders/{order_id}/capture"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}"
-    }
-    res = requests.post(url, headers=headers)
-    res.raise_for_status()
-    print(f"✅ Risposta capture: {res.json()}")
-    return res.json()
+def create_payment_link(chat_id, step):
+    prezzo = PREZZI[step]
+    prezzo_str = f"{prezzo:.2f}"
+    return f"https://comfy-mermaid-9cebbf.netlify.app/?chat_id={chat_id}&step={step}&amount={prezzo_str}"
 
-def create_payment_link(chat_id: str, step: int):
-    token = get_paypal_token()
-    url = "https://api.paypal.com/v2/checkout/orders"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}"
-    }
-    return_url = f"{NETLIFY_BASE_URL}/?chat_id={chat_id}&step={step}"
-    cancel_url = f"https://t.me/{BOT_USERNAME}"
-    data = {
-        "intent": "CAPTURE",
-        "purchase_units": [{
-            "amount": {
-                "currency_code": "EUR",
-                "value": PREZZO_EURO
-            },
-            "custom_id": f"{chat_id}:{step}"
-        }],
-        "application_context": {
-            "return_url": return_url,
-            "cancel_url": cancel_url
-        }
-    }
-    res = requests.post(url, headers=headers, json=data)
-    res.raise_for_status()
-    links = res.json()["links"]
-    print(f"✅ Link pagamento creato per step {step}")
-    return next(link["href"] for link in links if link["rel"] == "approve")
-
-def send_photo_and_next_payment(chat_id: str, step: int):
-    if step < len(PHOTO_IDS):
-        photo_url = f"https://drive.google.com/uc?export=view&id={PHOTO_IDS[step]}"
-        print(f"📸 Invio foto {step + 1} a chat_id={chat_id}")
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={
-            "chat_id": chat_id,
-            "photo": photo_url
-        })
-
-        if step + 1 < len(PHOTO_IDS):
-            next_step = step + 1
-            payment_link = create_payment_link(chat_id, next_step)
-            keyboard = {
-                "inline_keyboard": [[{
-                    "text": f"💳 Paga {PREZZO_EURO}€ per la foto {next_step + 1}",
-                    "url": payment_link
-                }]]
-            }
-            print(f"💬 Invio bottone pagamento per foto {next_step + 1}")
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
-                "chat_id": chat_id,
-                "text": f"Spero ti piaccia 😏, per ricevere la foto {next_step + 1}, ti chiedo un altro piccolo contributo 😘 👇",
-                "reply_markup": json.dumps(keyboard)
-            })
-        else:
-            print(f"🎉 Ultima foto inviata a chat_id={chat_id}")
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
-                "chat_id": chat_id,
-                "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
-            })
-
-def send_view_button(chat_id: str, step: int):
-    print(f"👁 Invio bottone 'Guarda foto' per step={step} a chat_id={chat_id}")
-    keyboard = {
-        "inline_keyboard": [[{
-            "text": f"📸 Guarda foto {step + 1}",
-            "callback_data": f"{step}b"
-        }]]
-    }
-    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+def send_photo(chat_id, step):
+    photo_id = PHOTO_IDS[step]
+    photo_url = f"https://drive.google.com/uc?export=view&id={photo_id}"
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={
         "chat_id": chat_id,
-        "text": "❤️ Pagamento ricevuto! Premi per vedere la tua foto 😏 👇",
-        "reply_markup": json.dumps(keyboard)
+        "photo": photo_url
     })
+
+def send_payment_button(chat_id, step):
+    if step < len(PHOTO_IDS):
+        payment_link = create_payment_link(chat_id, step)
+        prezzo_str = f"{PREZZI[step]:.2f}"
+        keyboard = {
+            "inline_keyboard": [[{
+                "text": f"💳 Paga {prezzo_str}€ per la foto {step + 1}",
+                "url": payment_link
+            }]]
+        }
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+            "chat_id": chat_id,
+            "text": f"Per ricevere la foto {step + 1}, effettua il pagamento 👇",
+            "reply_markup": json.dumps(keyboard)
+        })
 
 async def main(context):
     req = context.req
@@ -153,62 +82,38 @@ async def main(context):
         body = req.body if isinstance(req.body, dict) else json.loads(req.body)
         print("📥 Corpo ricevuto:", body)
 
-        # ➤ Richiamo manuale da Netlify
-        if body.get("source") == "manual-return" and body.get("chat_id") and body.get("step") is not None:
-            chat_id = str(body["chat_id"])
-            step = int(body["step"])
-            print(f"🔄 Richiamo manuale per chat_id={chat_id}, step={step}")
-            send_view_button(chat_id, step)
-            return res.json({"status": f"manual-return ok step {step}"}, 200)
-
-        # ➤ Webhook da PayPal
-        if body.get("event_type") == "CHECKOUT.ORDER.APPROVED":
-            order_id = body["resource"]["id"]
-            pu = body["resource"]["purchase_units"][0]
-            custom_id = pu.get("custom_id", "")
-            print(f"🧾 Webhook APPROVED ricevuto per order_id={order_id}, custom_id={custom_id}")
-            if ":" in custom_id:
-                chat_id, step = custom_id.split(":")
-                step = int(step)
-                capture_result = capture_order(order_id)
-                send_view_button(chat_id, step)
-                print(f"✅ Ordine {order_id} catturato e bottone inviato.")
-                return res.json({"status": f"Captured order {order_id} and sent photo button"}, 200)
-
-        # ➤ Callback Telegram (bottone "Guarda foto")
-        if "callback_query" in body:
-            callback = body["callback_query"]
-            chat_id = str(callback["message"]["chat"]["id"])
-            data = callback.get("data", "")
-            print(f"🔘 Callback ricevuto da chat_id={chat_id}, data={data}")
-
-            if data.endswith("b"):
-                step_str = data[:-1]
-                if step_str.isdigit():
-                    step = int(step_str)
-                    send_photo_and_next_payment(chat_id, step)
-                    print(f"📸 Foto inviata per step {step}, pagamento successivo impostato.")
-                    return res.json({"status": f"photo {step} ok"}, 200)
-
-        # ➤ Comando /start
+        # Messaggio Telegram
         if "message" in body:
             msg = body["message"]
             chat_id = str(msg["chat"]["id"])
             if msg.get("text") == "/start":
                 print(f"👋 /start ricevuto da chat_id={chat_id}")
-                step = 0
-                payment_link = create_payment_link(chat_id, step)
-                keyboard = {
-                    "inline_keyboard": [[{
-                        "text": "💳 Paga 1,99€ per la foto 1",
-                        "url": payment_link
-                    }]]
-                }
+                send_payment_button(chat_id, 0)
+                return res.json({"status": "ok"}, 200)
+
+        # Callback da Netlify
+        if "query" in req.params:
+            params = req.params["query"]
+            chat_id = params.get("chat_id")
+            step_str = params.get("step")
+
+            if not chat_id or not step_str:
+                return res.json({"status": "error", "message": "Parametri mancanti"}, 400)
+
+            step = int(step_str)
+            print(f"✅ Pagamento confermato. Invio foto {step + 1} a chat_id={chat_id}")
+            send_photo(chat_id, step)
+
+            next_step = step + 1
+            if next_step < len(PHOTO_IDS):
+                send_payment_button(chat_id, next_step)
+            else:
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                     "chat_id": chat_id,
-                    "text": "Benvenuto 😘 Premi qui sotto per acquistare e ricevere la prima foto esclusiva 👇:",
-                    "reply_markup": json.dumps(keyboard)
+                    "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
                 })
+
+            return res.json({"status": "ok"}, 200)
 
         return res.json({"status": "ok"}, 200)
 
