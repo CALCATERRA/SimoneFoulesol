@@ -4,7 +4,7 @@ import requests
 import traceback
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-SECRET_TOKEN = os.environ.get("SECRET_TOKEN")  # nuovo token segreto per sicurezza
+SECRET_TOKEN = os.environ.get("SECRET_TOKEN")
 
 PHOTO_IDS = [
     "10dgQq9LgVgWfZcl97jJPxsJbr1DBrxyG",
@@ -45,10 +45,8 @@ def send_payment_button(chat_id, step):
         })
 
 def main(context):
-    req = context.req
-    res = context.res
-
     try:
+        req = context.req
         body = req.body if isinstance(req.body, dict) else json.loads(req.body)
         print("📥 Corpo ricevuto:", body)
 
@@ -59,15 +57,22 @@ def main(context):
             if msg.get("text") == "/start":
                 print(f"👋 /start ricevuto da chat_id={chat_id}")
                 send_payment_button(chat_id, 0)
-                return res.json({"status": "ok"}, 200)
+                return {
+                    "statusCode": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"status": "ok"})
+                }
 
         # Conferma pagamento da notify.py
         if "chat_id" in body and "step" in body:
-            # Verifica token segreto
             token = body.get("secret_token")
             if token != SECRET_TOKEN:
-                print("❌ Token segreto mancante o errato. Ignoro la richiesta.")
-                return res.json({"status": "error", "message": "Unauthorized"}, 401)
+                print("❌ Token segreto mancante o errato.")
+                return {
+                    "statusCode": 401,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"status": "error", "message": "Unauthorized"})
+                }
 
             chat_id = body["chat_id"]
             step = int(body["step"])
@@ -83,11 +88,24 @@ def main(context):
                     "text": "🎉 Hai visto tutte le foto disponibili! Grazie di cuore per il supporto. ❤️"
                 })
 
-            return res.json({"status": "ok"}, 200)
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"status": "ok"})
+            }
 
-        return res.json({"status": "ok"}, 200)
+        # Nessuna azione necessaria
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"status": "ok"})
+        }
 
     except Exception as e:
         print("❗ Errore:", str(e))
         traceback.print_exc()
-        return res.json({"status": "error", "message": str(e)}, 500)
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"status": "error", "message": str(e)})
+        }
