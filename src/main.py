@@ -93,6 +93,11 @@ def main(context):
                     "text": "Perfetto! Sto controllando il pagamento... 🔍"
                 })
                 # Qui potresti chiamare notify.py via HTTP o altro metodo
+                response = requests.post("https://comfy-mermaid-9cebbf.netlify.app/.netlify/functions/notify", json={
+                    "chat_id": chat_id,
+                    "step": step,
+                    "source": "manual-return"
+                })
                 # Oppure sarà notify.py stesso a chiamare Appwrite come fa già
 
                 return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"status": "ok"})}
