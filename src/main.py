@@ -17,6 +17,7 @@ PREZZI = [1.99 - i * 0.01 for i in range(len(PHOTO_IDS))]
 def create_payment_link(chat_id, step):
     prezzo = PREZZI[step]
     prezzo_str = f"{prezzo:.2f}"
+    # Passo anche amount per controllo importo preciso
     return f"https://comfy-mermaid-9cebbf.netlify.app/?chat_id={chat_id}&step={step}&amount={prezzo_str}"
 
 def send_photo(chat_id, step):
@@ -51,7 +52,7 @@ def main(context):
         body = req.body if isinstance(req.body, dict) else json.loads(req.body)
         print("📥 Corpo ricevuto:", body)
 
-                # Messaggio Telegram
+        # Caso messaggio Telegram
         if "message" in body:
             msg = body["message"]
             chat_id = str(msg["chat"]["id"])
@@ -60,11 +61,10 @@ def main(context):
                 send_payment_button(chat_id, 0)
                 return res.json({"status": "ok"}, 200)
 
-        # Conferma pagamento da Netlify (corpo JSON POST)
+        # Conferma pagamento da Netlify (notify.py)
         if "chat_id" in body and "step" in body:
             chat_id = body["chat_id"]
-            step_str = body["step"]
-            step = int(step_str)
+            step = int(body["step"])
             print(f"✅ Pagamento confermato. Invio foto {step + 1} a chat_id={chat_id}")
             send_photo(chat_id, step)
 
@@ -78,7 +78,6 @@ def main(context):
                 })
 
             return res.json({"status": "ok"}, 200)
-
 
         return res.json({"status": "ok"}, 200)
 
