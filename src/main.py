@@ -51,7 +51,7 @@ def main(context):
         body = req.body if isinstance(req.body, dict) else json.loads(req.body)
         print("📥 Corpo ricevuto:", body)
 
-        # Messaggio Telegram
+                # Messaggio Telegram
         if "message" in body:
             msg = body["message"]
             chat_id = str(msg["chat"]["id"])
@@ -60,16 +60,10 @@ def main(context):
                 send_payment_button(chat_id, 0)
                 return res.json({"status": "ok"}, 200)
 
-        # Parametri query per conferma pagamento da Netlify
-        params = getattr(req, "params", {}) or getattr(req, "query", {})
-        if params:
-            print("📥 Query params:", params)
-            chat_id = params.get("chat_id")
-            step_str = params.get("step")
-
-            if not chat_id or not step_str:
-                return res.json({"status": "error", "message": "Parametri mancanti"}, 400)
-
+        # Conferma pagamento da Netlify (corpo JSON POST)
+        if "chat_id" in body and "step" in body:
+            chat_id = body["chat_id"]
+            step_str = body["step"]
             step = int(step_str)
             print(f"✅ Pagamento confermato. Invio foto {step + 1} a chat_id={chat_id}")
             send_photo(chat_id, step)
@@ -84,6 +78,7 @@ def main(context):
                 })
 
             return res.json({"status": "ok"}, 200)
+
 
         return res.json({"status": "ok"}, 200)
 
