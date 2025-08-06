@@ -58,7 +58,7 @@ def send_payment_button(chat_id, step):
         }
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
             "chat_id": chat_id,
-            "text": "Dopo il pagamento, premi il pulsante qui sotto per ricevere la foto ⬇️",
+            "text": "Dopo il pagamento, premi il pulsante qui sotto per ricevere la foto 👇",
             "reply_markup": json.dumps(keyboard2)
         })
 
@@ -92,7 +92,7 @@ def main(context):
                 print(f"📨 Utente ha cliccato 'Ho pagato' per step {step}.")
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                     "chat_id": chat_id,
-                    "text": "Perfetto! Sto controllando il pagamento... 🔍"
+                    "text": "Perfetto! Sto controllando il pagamento... 🔍...se tra un minutino non ricevi la foto e hai pagato, ripremi il tasto sopra 👆"
                 })
 
                 # Chiamata a notify.js con amount corretto
