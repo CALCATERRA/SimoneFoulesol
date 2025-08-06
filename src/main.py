@@ -97,6 +97,7 @@ def main(context):
                     "chat_id": chat_id,
                     "step": step,
                     "source": "manual-return"
+                    "secret_token": SECRET_TOKEN
                 })
                 # Oppure sarà notify.py stesso a chiamare Appwrite come fa già
 
