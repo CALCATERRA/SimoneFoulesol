@@ -96,7 +96,7 @@ def main(context):
                 response = requests.post("https://comfy-mermaid-9cebbf.netlify.app/.netlify/functions/notify", json={
                     "chat_id": chat_id,
                     "step": step,
-                    "source": "manual-return"
+                    "source": "manual-return",
                     "secret_token": SECRET_TOKEN
                 })
                 # Oppure sarà notify.py stesso a chiamare Appwrite come fa già
