@@ -85,25 +85,28 @@ def main(context):
 
             if data.get("action") == "verify_payment":
                 step = data.get("step", 0)
-                # Qui notify.py dovrebbe essere richiamato (via webhook, funzione, ecc.)
-                print(f"📨 Utente ha cliccato 'Ho pagato' per step {step}.")
+                prezzo = PREZZI[step]
+                amount_str = f"{prezzo:.2f}"
+
                 # Notifica all’utente
+                print(f"📨 Utente ha cliccato 'Ho pagato' per step {step}.")
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                     "chat_id": chat_id,
                     "text": "Perfetto! Sto controllando il pagamento... 🔍"
                 })
-                # Qui potresti chiamare notify.py via HTTP o altro metodo
+
+                # Chiamata a notify.js con amount corretto
                 response = requests.post("https://comfy-mermaid-9cebbf.netlify.app/.netlify/functions/notify", json={
                     "chat_id": chat_id,
                     "step": step,
+                    "amount": amount_str,
                     "source": "manual-return",
                     "secret_token": SECRET_TOKEN
                 })
-                # Oppure sarà notify.py stesso a chiamare Appwrite come fa già
 
                 return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"status": "ok"})}
 
-        # Conferma da notify.py (dopo lettura della mail)
+        # Conferma da notify.js
         if "chat_id" in body and "step" in body:
             token = body.get("secret_token")
             if token != SECRET_TOKEN:
