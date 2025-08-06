@@ -32,6 +32,26 @@ def send_payment_button(chat_id, step):
     if step < len(PHOTO_IDS):
         payment_link = create_payment_link(chat_id, step)
         prezzo_str = f"{PREZZI[step]:.2f}"
+
+        if step == 0:
+            # Frase personalizzata solo per la prima foto
+            intro_message = (
+                "Ciao😘, mi fa piacere vederti qui, spero di alietarti con le mie fotine..."
+                " per ora è difficile vederci di persona perciò per ogni foto ti chiedo solamente di offrirmi un caffè ☕..."
+                " e più andremo avanti e meno costeranno eh❤️, quindi se vuoi effettua il pagamento 👇"
+            )
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+                "chat_id": chat_id,
+                "text": intro_message
+            })
+        else:
+            # Frase standard per le foto successive
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+                "chat_id": chat_id,
+                "text": f"Per ricevere la foto {step + 1}, effettua il pagamento 👇"
+            })
+
+        # Pulsante pagamento
         keyboard = {
             "inline_keyboard": [[
                 {
@@ -42,24 +62,15 @@ def send_payment_button(chat_id, step):
         }
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
             "chat_id": chat_id,
-            "text": f"Per ricevere la foto {step + 1}, effettua il pagamento 👇",
-            "reply_markup": json.dumps(keyboard)
-        })
-
-        # Subito dopo, invia anche il pulsante "✅ Ho pagato"
-        callback_data = json.dumps({"action": "verify_payment", "step": step})
-        keyboard2 = {
-            "inline_keyboard": [[
-                {
-                    "text": "✅ Ho pagato",
-                    "callback_data": callback_data
-                }
-            ]]
-        }
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
-            "chat_id": chat_id,
             "text": "Dopo il pagamento, premi il pulsante qui sotto per ricevere la foto 👇",
-            "reply_markup": json.dumps(keyboard2)
+            "reply_markup": json.dumps({
+                "inline_keyboard": [[
+                    {
+                        "text": "✅ Ho pagato",
+                        "callback_data": json.dumps({"action": "verify_payment", "step": step})
+                    }
+                ]]
+            })
         })
 
 def main(context):
