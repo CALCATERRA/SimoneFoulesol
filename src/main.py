@@ -34,22 +34,14 @@ def send_payment_button(chat_id, step):
         prezzo_str = f"{PREZZI[step]:.2f}"
 
         if step == 0:
-            # Frase personalizzata solo per la prima foto
-            intro_message = (
-                "Ciao😘, mi fa piacere vederti qui, spero di alietarti con le mie fotine..."
-                " per ora è difficile vederci di persona perciò per ogni foto ti chiedo solamente di offrirmi un caffè ☕..."
-                " e più andremo avanti e meno costeranno eh❤️, quindi se vuoi effettua il pagamento 👇"
+            messaggio_intro = (
+                "Ciao😘, mi fa piacere vederti qui, spero di allietarti con le mie fotine... "
+                "per ora è difficile vederci di persona perciò per ogni foto ti chiedo solamente di offrirmi un caffè ☕... "
+                "e più andremo avanti e meno costeranno eh❤️, quindi se vuoi effettua il pagamento 👇"
             )
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
-                "chat_id": chat_id,
-                "text": intro_message
-            })
+            messaggio_pulsante = messaggio_intro
         else:
-            # Frase standard per le foto successive
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
-                "chat_id": chat_id,
-                "text": f"Per ricevere la foto {step + 1}, effettua il pagamento 👇"
-            })
+            messaggio_pulsante = f"Per ricevere la foto {step + 1}, effettua il pagamento 👇"
 
         # Pulsante pagamento
         keyboard = {
@@ -62,15 +54,24 @@ def send_payment_button(chat_id, step):
         }
         requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
             "chat_id": chat_id,
+            "text": messaggio_pulsante,
+            "reply_markup": json.dumps(keyboard)
+        })
+
+        # Pulsante "Ho pagato"
+        callback_data = json.dumps({"action": "verify_payment", "step": step})
+        keyboard2 = {
+            "inline_keyboard": [[
+                {
+                    "text": "✅ Ho pagato",
+                    "callback_data": callback_data
+                }
+            ]]
+        }
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+            "chat_id": chat_id,
             "text": "Dopo il pagamento, premi il pulsante qui sotto per ricevere la foto 👇",
-            "reply_markup": json.dumps({
-                "inline_keyboard": [[
-                    {
-                        "text": "✅ Ho pagato",
-                        "callback_data": json.dumps({"action": "verify_payment", "step": step})
-                    }
-                ]]
-            })
+            "reply_markup": json.dumps(keyboard2)
         })
 
 def main(context):
@@ -79,7 +80,6 @@ def main(context):
         body = req.body if isinstance(req.body, dict) else json.loads(req.body)
         print("📥 Corpo ricevuto:", body)
 
-        # Caso messaggio /start
         if "message" in body:
             msg = body["message"]
             chat_id = str(msg["chat"]["id"])
@@ -88,7 +88,6 @@ def main(context):
                 send_payment_button(chat_id, 0)
                 return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"status": "ok"})}
 
-        # Gestione click pulsante "✅ Ho pagato"
         if "callback_query" in body:
             query = body["callback_query"]
             chat_id = str(query["message"]["chat"]["id"])
@@ -99,14 +98,12 @@ def main(context):
                 prezzo = PREZZI[step]
                 amount_str = f"{prezzo:.2f}"
 
-                # Notifica all’utente
                 print(f"📨 Utente ha cliccato 'Ho pagato' per step {step}.")
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
                     "chat_id": chat_id,
                     "text": "Perfetto! Sto controllando il pagamento... 🔍...se tra un minutino non ricevi la foto e hai pagato, ripremi il tasto sopra 👆"
                 })
 
-                # Chiamata a notify.js con amount corretto
                 response = requests.post("https://comfy-mermaid-9cebbf.netlify.app/.netlify/functions/notify", json={
                     "chat_id": chat_id,
                     "step": step,
@@ -117,7 +114,6 @@ def main(context):
 
                 return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"status": "ok"})}
 
-        # Conferma da notify.js
         if "chat_id" in body and "step" in body:
             token = body.get("secret_token")
             if token != SECRET_TOKEN:
@@ -140,7 +136,6 @@ def main(context):
 
             return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"status": "ok"})}
 
-        # Nessuna azione specifica
         return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"status": "ok"})}
 
     except Exception as e:
